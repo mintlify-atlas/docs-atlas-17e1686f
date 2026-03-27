@@ -1,0 +1,136 @@
+---
+title: "Processors"
+description: "Plugins that transform, enrich, or filter metadata records as they flow through the Meteor pipeline."
+---
+
+A processor is a plugin that receives a single `models.Record`, transforms it, and returns the modified record. Processors are applied sequentially in the order they appear in the recipe's `processors` list.
+
+The output of one processor is the input to the next. After all processors have run, the final record is delivered to each sink.
+
+## How processors work
+
+Processors are registered as **stream middleware**. When the agent sets up a recipe, each processor is chained onto the stream in order:
+
+```
+extractor emits record
+  → processor 1 transforms record
+  → processor 2 transforms record
+  → (final record) → sink 1
+                   → sink 2
+```
+
+If a processor returns an error for a record, that record is dropped and the error is logged. Processing continues for subsequent records.
+
+## The Processor interface
+
+Every processor implements the `Processor` interface defined in `plugins/plugin.go`:
+
+```go plugins/plugin.go
+// Plugin is the base interface shared by all plugin types.
+type Plugin interface {
+    // Info returns the plugin's metadata.
+    Info() Info
+
+    // Validate checks whether the given config is valid for this plugin.
+    Validate(config Config) error
+
+    // Init is called once before running.
+    Init(ctx context.Context, config Config) error
+}
+
+// Processor transforms a single metadata record.
+type Processor interface {
+    Plugin
+    Process(ctx context.Context, src models.Record) (dst models.Record, err error)
+}
+```
+
+`Process` receives the source record (`src`) and must return either a transformed destination record (`dst`) or an error.
+
+## Lifecycle
+
+<Steps>
+  <Step title="Validate">
+    `Validate(config)` is called to check that all required processor config fields are present. Validation errors are reported before any extraction begins.
+  </Step>
+  <Step title="Init">
+    `Init(ctx, config)` is called once to prepare the processor. For processors that call external services or load data (e.g. `enrich`, `script`), this is where those connections are established.
+  </Step>
+  <Step title="Process">
+    `Process(ctx, src)` is called for every record emitted by the extractor. It must return the transformed record or an error.
+  </Step>
+</Steps>
+
+## Built-in processors
+
+<AccordionGroup>
+  <Accordion title="enrich" defaultOpen={true}>
+    Appends key-value pairs to the asset's custom attributes (`asset.attributes`). Use it to attach static metadata such as a team name, cost centre, or environment tag.
+
+    ```yaml
+    processors:
+      - name: enrich
+        config:
+          attributes:
+            team: data-platform
+            environment: production
+    ```
+  </Accordion>
+  <Accordion title="labels">
+    Attaches label key-value pairs to the asset's `labels` map. Labels are a first-class field surfaced in Compass and other downstream systems.
+
+    ```yaml
+    processors:
+      - name: labels
+        config:
+          labels:
+            environment: production
+            team: data-platform
+    ```
+  </Accordion>
+  <Accordion title="script">
+    Runs a custom [Tengo](https://github.com/d5/tengo) script to transform each record. Use it for conditional logic, string manipulation, or restructuring nested fields that `enrich` and `labels` cannot handle.
+
+    ```yaml
+    processors:
+      - name: script
+        config:
+          engine: tengo
+          script: |
+            asset.owners = append(asset.owners || [], {name: "data-team", email: "data@example.com"})
+    ```
+  </Accordion>
+</AccordionGroup>
+
+See the [processors reference](/reference/processors) for full configuration details.
+
+## Using multiple processors
+
+Processors chain sequentially. The order in the recipe matters:
+
+```yaml
+processors:
+  - name: labels
+    config:
+      labels:
+        environment: production
+  - name: enrich
+    config:
+      attributes:
+        owner: data-platform-team
+  - name: script
+    config:
+      engine: tengo
+      script: |
+        asset.description = "Processed by Meteor"
+```
+
+Each record passes through `labels` first, then `enrich`, then `script`, before being sent to the sinks.
+
+<Tip>
+Keep processor configs minimal and composable. Use `enrich` or `labels` for simple key injection, and `script` only when you need record-specific logic.
+</Tip>
+
+## Processors are optional
+
+The `processors` field in a recipe is optional. If omitted, records flow directly from the extractor to the sinks without any transformation.

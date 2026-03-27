@@ -1,0 +1,445 @@
+---
+title: Sinks
+description: Reference for all sink plugins in Meteor. Sinks receive processed asset records from the pipeline and deliver them to a destination system.
+---
+
+Sinks are the final stage of a Meteor recipe pipeline. After extractors collect metadata and processors optionally transform it, sinks deliver the resulting asset records to a destination system.
+
+## Available sinks
+
+| Sink | Protocol | Primary use case |
+| --- | --- | --- |
+| [compass](#compass) | HTTP | Push metadata to Raystack Compass for discovery and lineage |
+| [console](#console) | stdout | Print asset records to standard output for debugging |
+| [file](#file) | Local filesystem | Write asset records to a local file in NDJSON or YAML format |
+| [frontier](#frontier) | gRPC | Upsert user records into Raystack Frontier |
+| [gcs](#gcs) | Google Cloud Storage | Write asset records as NDJSON to a GCS bucket |
+| [http](#http) | HTTP | Send asset records to any HTTP endpoint with optional Tengo scripting |
+| [kafka](#kafka) | Apache Kafka | Publish serialized asset records to a Kafka topic |
+| [stencil](#stencil) | HTTP | Register table schemas in Raystack Stencil as JSON or Avro |
+
+<Note>
+Each sink is declared under the `sinks` key in a recipe file. A recipe can have multiple sinks; each runs independently after the processor stage completes.
+</Note>
+
+---
+
+<AccordionGroup>
+
+<Accordion title="compass" icon="compass">
+
+## compass
+
+The `compass` sink sends asset records to [Raystack Compass](https://github.com/raystack/compass), a search and discovery engine for application deployments, datasets, and metadata resources. Compass also tracks data lineage relationships between resources.
+
+Records are delivered via HTTP PATCH to the Compass `/v1beta1/assets` endpoint. Lineage upstreams and downstreams present on the asset are forwarded automatically. 500-level responses are retried.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: compass
+    config:
+      host: https://compass.example.com
+      headers:
+        Compass-User-Email: meteor@example.com
+        X-Other-Header: value1, value2
+      labels:
+        myCustomLabel: $attributes.myCustomField
+        envLabel: $labels.environment
+      remove_unset_fields_in_data: false
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Base URL of the Compass service. Example: `https://compass.example.com`
+</ParamField>
+
+<ParamField body="headers" type="object">
+  Additional HTTP headers to include in every request. Multiple values for a single header can be separated by a comma.
+
+  ```yaml
+  headers:
+    Compass-User-Email: meteor@example.com
+    X-Custom-Header: value1, value2
+  ```
+</ParamField>
+
+<ParamField body="labels" type="object">
+  Key-value pairs to attach as labels on the Compass asset payload. Values support two template patterns:
+
+  - `$attributes.<field>` — reads from the asset's custom attributes
+  - `$labels.<field>` — reads from the asset's existing labels
+
+  ```yaml
+  labels:
+    env: $labels.environment
+    owner: $attributes.team
+  ```
+</ParamField>
+
+<ParamField body="remove_unset_fields_in_data" type="boolean" default="false">
+  When `true`, fields that are unset (zero-value) in the source asset are omitted from the payload sent to Compass. Set to `true` to keep Compass data sparse and avoid overwriting existing values with empty strings.
+</ParamField>
+
+<Tip>
+Use `remove_unset_fields_in_data: true` when running incremental syncs to avoid accidentally clearing fields that the extractor did not populate.
+</Tip>
+
+</Accordion>
+
+<Accordion title="console" icon="terminal">
+
+## console
+
+The `console` sink writes each asset record as JSON to standard output. It requires no configuration.
+
+This sink is useful during recipe development and debugging — you can run a recipe locally and inspect the full asset structure before pointing it at a real destination.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: console
+```
+
+**Config fields**
+
+This sink has no configuration options.
+
+<Tip>
+Combine `console` with a `file` sink during development: `console` gives you immediate terminal feedback while `file` captures the full output for deeper inspection.
+</Tip>
+
+</Accordion>
+
+<Accordion title="file" icon="file">
+
+## file
+
+The `file` sink writes asset records to a file on the local filesystem. Two output formats are supported:
+
+- **`ndjson`** — Newline-delimited JSON, one JSON object per line. Compatible with tools like `jq` and most data pipeline ingestion endpoints.
+- **`yaml`** — YAML document list.
+
+The output directory must already exist; Meteor will not create it.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: file
+    config:
+      path: ./output/assets.ndjson
+      format: ndjson
+      overwrite: true
+```
+
+**Config fields**
+
+<ParamField body="path" type="string" required>
+  Absolute or relative path to the output file. The parent directory must exist. The filename must include an extension, e.g. `assets.ndjson` or `assets.yaml`.
+</ParamField>
+
+<ParamField body="format" type="string" required>
+  Output format. Accepted values: `ndjson`, `yaml`.
+</ParamField>
+
+<ParamField body="overwrite" type="boolean" default="true">
+  When `true` (default), truncates the file before writing. When `false`, appends to an existing file if it already exists.
+</ParamField>
+
+<Note>
+The `path` value is resolved relative to the working directory where you run the `meteor` binary, not relative to the recipe file.
+</Note>
+
+</Accordion>
+
+<Accordion title="frontier" icon="shield">
+
+## frontier
+
+The `frontier` sink upserts user records into [Raystack Frontier](https://github.com/raystack/frontier), a cloud-native role-based authorization service. Communication happens over gRPC.
+
+This sink expects assets of type `User`. For each record it calls the Frontier `UpdateUser` RPC. Records that lack a name, email, or attributes are skipped with a warning rather than failing the whole batch. `UNAVAILABLE` gRPC status codes are retried.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: frontier
+    config:
+      host: frontier.example.com:5556
+      headers:
+        X-Frontier-Email: meteor@example.com
+        X-Other-Header: value1, value2
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Hostname and port of the Frontier gRPC service. Example: `frontier.example.com:5556`
+</ParamField>
+
+<ParamField body="headers" type="object">
+  gRPC metadata headers to attach to every outgoing call. Multiple values for a single key can be separated by a comma.
+
+  ```yaml
+  headers:
+    X-Frontier-Email: meteor@example.com
+  ```
+</ParamField>
+
+<Note>
+Only assets of type `User` are processed by this sink. Assets of other types will produce an error when the sink attempts to unmarshal the data payload.
+</Note>
+
+</Accordion>
+
+<Accordion title="gcs" icon="cloud">
+
+## gcs
+
+The `gcs` sink writes asset records as NDJSON to a Google Cloud Storage bucket. Each pipeline run creates a new timestamped object in the target path, so historical outputs are preserved.
+
+The object name is generated as `[object_prefix-]<RFC3339-timestamp>.ndjson`. If `object_prefix` is omitted, only the timestamp is used.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: gcs
+    config:
+      project_id: my-gcp-project
+      url: gcs://my-metadata-bucket/meteor/output
+      object_prefix: bigquery-tables
+      service_account_base64: <base64-encoded-service-account-key>
+```
+
+**Config fields**
+
+<ParamField body="project_id" type="string" required>
+  Google Cloud project ID that owns the target bucket.
+</ParamField>
+
+<ParamField body="url" type="string" required>
+  Destination URL in the format `gcs://<bucket-name>/<optional-folder-path>`. Example: `gcs://my-bucket/folder/subfolder`
+</ParamField>
+
+<ParamField body="object_prefix" type="string">
+  Prefix for the output object name. The final name will be `<prefix>-<timestamp>.ndjson`. If omitted, the file is named `<timestamp>.ndjson`.
+</ParamField>
+
+<ParamField body="service_account_base64" type="string">
+  Base64-encoded GCP service account key JSON. Takes precedence over `service_account_json` when both are provided.
+</ParamField>
+
+<ParamField body="service_account_json" type="string">
+  GCP service account key as a raw JSON string. Use `service_account_base64` instead when storing credentials in environment variables or secret managers to avoid YAML escaping issues.
+
+  ```yaml
+  service_account_json: |
+    {
+      "type": "service_account",
+      "private_key_id": "abc123",
+      "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...",
+      "client_email": "meteor@my-project.iam.gserviceaccount.com",
+      "client_id": "123456789",
+      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+      "token_uri": "https://oauth2.googleapis.com/token"
+    }
+  ```
+</ParamField>
+
+<Warning>
+Exactly one of `service_account_base64` or `service_account_json` must be provided. The sink will fail to initialize if both are empty.
+</Warning>
+
+</Accordion>
+
+<Accordion title="http" icon="globe">
+
+## http
+
+The `http` sink sends asset records to any HTTP endpoint. It supports:
+
+- Go [`text/template`](https://pkg.go.dev/text/template) expressions in the URL, letting you route each asset to a different path based on its type or URN.
+- An optional [Tengo](https://github.com/d5/tengo) script to build a fully custom request payload instead of sending the raw asset JSON.
+- Configurable HTTP method and expected success status code.
+
+500-level responses are automatically retried.
+
+**Sample recipe — direct JSON POST**
+
+```yaml
+sinks:
+  - name: http
+    config:
+      url: https://api.example.com/v1/assets
+      method: POST
+      success_code: 201
+      headers:
+        Content-Type: application/json
+        Authorization: Bearer my-token
+```
+
+**Sample recipe — custom Tengo payload**
+
+```yaml
+sinks:
+  - name: http
+    config:
+      url: https://api.example.com/v1beta2/asset/{{ .Type }}/{{ .Urn }}
+      method: PUT
+      headers:
+        X-Source: meteor
+      script:
+        engine: tengo
+        source: |
+          payload := {
+            details: {
+              urn: asset.urn,
+              name: asset.name,
+              service: asset.service
+            }
+          }
+          sink(payload)
+```
+
+**Config fields**
+
+<ParamField body="url" type="string" required>
+  URL of the destination endpoint. Supports Go `text/template` syntax using fields from the [`Asset` proto](https://github.com/raystack/proton/blob/main/raystack/assets/v1beta2/asset.proto). Example: `https://api.example.com/{{ .Type }}/{{ .Urn }}`
+</ParamField>
+
+<ParamField body="method" type="string" required>
+  HTTP method to use. Example: `POST`, `PUT`, `PATCH`.
+</ParamField>
+
+<ParamField body="success_code" type="number" default="200">
+  HTTP status code that indicates a successful response. Responses with any other code are treated as errors; 5xx codes trigger a retry.
+</ParamField>
+
+<ParamField body="headers" type="object">
+  HTTP request headers. Multiple values for a single header can be separated by a comma.
+
+  ```yaml
+  headers:
+    Authorization: Bearer my-token
+    X-Custom: value1, value2
+  ```
+</ParamField>
+
+<ParamField body="script" type="object">
+  Optional Tengo script for building a custom payload. When present, the raw asset JSON is not sent; the script is responsible for calling `sink(payload)` with the data to transmit.
+
+  <Expandable title="script fields">
+    <ParamField body="script.engine" type="string" required>
+      Script engine. Only `tengo` is supported.
+    </ParamField>
+
+    <ParamField body="script.source" type="string" required>
+      Tengo script source code. The `asset` variable is available as a map matching the `Asset` proto structure. Call `sink(payload)` to send the request, or `exit()` to skip the current record.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<Tip>
+Use URL templates when your API uses resource-type routing. For example, `{{ .Type }}` expands to `table`, `topic`, `dashboard`, etc. based on the asset being sinked.
+</Tip>
+
+</Accordion>
+
+<Accordion title="kafka" icon="server">
+
+## kafka
+
+The `kafka` sink publishes asset records to an Apache Kafka topic as serialized protobuf messages. It uses the `LeastBytes` balancer strategy to distribute messages across partitions.
+
+An optional `key_path` lets you specify which field of the asset to use as the Kafka message key, which is useful for log-compacted topics.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: kafka
+    config:
+      brokers: "kafka-broker-1:9092,kafka-broker-2:9092"
+      topic: meteor-assets
+      key_path: .Urn
+```
+
+**Config fields**
+
+<ParamField body="brokers" type="string" required>
+  Comma-separated list of Kafka broker addresses. Example: `"localhost:9092"` or `"broker1:9092,broker2:9092"`
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  Name of the Kafka topic to publish to.
+</ParamField>
+
+<ParamField body="key_path" type="string">
+  Dot-separated path to a top-level string field on the asset struct to use as the Kafka message key. Must be in the form `.FieldName` (e.g. `.Urn`). Nested fields are not currently supported. When omitted, messages are published without a key.
+</ParamField>
+
+<Note>
+Messages are serialized as binary protobuf. Consumers must use the `raystack.assets.v1beta2.Asset` proto descriptor to deserialize them. Consider pairing this sink with the [Stencil](https://github.com/raystack/stencil) schema registry to distribute the schema to consumers.
+</Note>
+
+</Accordion>
+
+<Accordion title="stencil" icon="database">
+
+## stencil
+
+The `stencil` sink registers table column schemas into [Raystack Stencil](https://github.com/raystack/stencil), a schema registry for managing and validating schemas across applications.
+
+For each `Table` asset, Meteor derives a schema (JSON Schema or Avro) from the table's column definitions and posts it to the Stencil `/v1beta1/namespaces/{namespace}/schemas/{schema}` endpoint. Assets that are not of type `Table` are silently skipped.
+
+**Sample recipe**
+
+```yaml
+sinks:
+  - name: stencil
+    config:
+      host: https://stencil.example.com
+      namespace_id: data-platform
+      schema_id: my-schema
+      format: json
+      send_format_header: false
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Base URL of the Stencil service. Example: `https://stencil.example.com`
+</ParamField>
+
+<ParamField body="namespace_id" type="string" required>
+  The Stencil namespace under which schemas will be registered. The namespace must already exist in Stencil.
+</ParamField>
+
+<ParamField body="schema_id" type="string" required>
+  The schema ID to create or update within the namespace.
+</ParamField>
+
+<ParamField body="format" type="string" default="json">
+  Schema format to register. Accepted values: `json`, `avro`.
+
+  - `json` — Produces a [JSON Schema (2020-12)](https://json-schema.org/draft/2020-12/schema) document.
+  - `avro` — Produces an Avro record schema. The namespace field in the Avro schema is set to the value of `namespace_id`.
+</ParamField>
+
+<ParamField body="send_format_header" type="boolean" default="false">
+  When `true`, includes the schema format in the request header. Set to `true` when changing the format of an existing schema (e.g. from JSON to Avro).
+</ParamField>
+
+<Note>
+Only `Table` assets are processed by this sink. Assets of other types (dashboards, topics, etc.) are skipped without error. Column data types are mapped to JSON Schema or Avro types based on the source service (BigQuery and PostgreSQL mappings are built in).
+</Note>
+
+</Accordion>
+
+</AccordionGroup>

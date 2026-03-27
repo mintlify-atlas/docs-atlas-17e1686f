@@ -1,0 +1,78 @@
+---
+title: "Introduction"
+description: "What Meteor is, how it works, and why you'd use it to collect metadata from your data infrastructure."
+---
+
+Meteor is a plugin-driven agent for collecting metadata. Written in Go, it compiles into a single binary with no external dependencies. You point it at a data source — a database, a dashboard, a message queue, a cloud service — and it extracts metadata and forwards it to any catalog or downstream system.
+
+Metadata flows through three stages: an **extractor** pulls from a source, optional **processors** transform the data, and one or more **sinks** deliver it to its destination. You wire these together in a YAML file called a **recipe**.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="No external dependencies" icon="cube">
+    Written in Go. Compiles to a single binary. No runtime dependencies to manage.
+  </Card>
+  <Card title="Plugin-driven" icon="plug">
+    Extractors, processors, and sinks are all plugins. New ones can be added without modifying core code.
+  </Card>
+  <Card title="Wide ecosystem" icon="grid-2">
+    Plugins cover databases, dashboards, messaging systems, cloud storage, and user directories out of the box.
+  </Card>
+  <Card title="Runs anywhere" icon="server">
+    Minimal memory footprint. Runs in VMs, containers, or directly on a host machine.
+  </Card>
+</CardGroup>
+
+## How it works
+
+Every extraction job is described by a recipe — a YAML file with three sections:
+
+- **`source`** — the extractor plugin and its configuration (credentials, connection strings, scope)
+- **`processors`** — optional plugins that enrich or transform metadata before it leaves
+- **`sinks`** — one or more destination plugins that receive the final metadata
+
+A minimal recipe looks like this:
+
+```yaml
+name: my-postgres-job
+version: v1beta1
+source:
+  name: postgres
+  scope: production
+  config:
+    connection_url: "postgres://user:pass@localhost:5432/mydb"
+sinks:
+  - name: console
+```
+
+You run it with:
+
+```bash
+meteor run my-postgres-job.yaml
+```
+
+Meteor prints a run summary — recipe name, source, duration, and record count — for each job.
+
+## Explore the docs
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install Meteor and run your first extraction in under five minutes.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    All installation methods: Homebrew, binary download, Docker, and building from source.
+  </Card>
+  <Card title="Concepts" icon="book-open" href="/concepts/overview">
+    Understand recipes, extractors, processors, and sinks in depth.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/reference/commands">
+    Full reference for every Meteor command and flag.
+  </Card>
+  <Card title="Extractors" icon="database" href="/reference/extractors/databases">
+    Browse available extractor plugins for databases, dashboards, messaging, and more.
+  </Card>
+  <Card title="Sinks" icon="arrow-right-from-bracket" href="/reference/sinks">
+    Deliver metadata to Compass, Kafka, HTTP endpoints, GCS, and other destinations.
+  </Card>
+</CardGroup>

@@ -1,0 +1,129 @@
+---
+title: Storage Extractors
+description: Reference for storage and file extractors supported by Meteor, including Google Cloud Storage (GCS) and CSV files.
+---
+
+Storage extractors collect metadata from object stores and file-based sources. GCS emits `Bucket` assets; the CSV extractor emits `Table` assets with column schemas derived from CSV headers.
+
+<AccordionGroup>
+
+<Accordion title="gcs" icon="folder">
+
+Extracts bucket and (optionally) blob metadata from Google Cloud Storage.
+
+**Prerequisites**
+
+- A Google Cloud service account with the `Storage Object Viewer` role (or `Storage Viewer` for bucket-only metadata).
+- Provide credentials via `service_account_base64`, `service_account_json`, or Application Default Credentials.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: gcs
+  config:
+    project_id: my-gcp-project
+    extract_blob: true
+    exclude:
+      - bucket_a
+      - bucket_b
+    service_account_base64: _________BASE64_ENCODED_SERVICE_ACCOUNT_________________
+```
+
+**Sample recipe using Application Default Credentials**
+
+```yaml
+source:
+  name: gcs
+  config:
+    project_id: my-gcp-project
+    extract_blob: false
+```
+
+**Config fields**
+
+<ParamField body="project_id" type="string" required>
+  Google Cloud project ID whose buckets will be crawled.
+</ParamField>
+
+<ParamField body="extract_blob" type="boolean" default="false">
+  When `true`, individual blob (object) metadata is extracted in addition to bucket-level metadata. This can significantly increase run time for buckets with large numbers of objects.
+</ParamField>
+
+<ParamField body="service_account_base64" type="string">
+  Service account JSON encoded as a base64 string. Takes precedence over `service_account_json`. If both are omitted, Application Default Credentials are used.
+</ParamField>
+
+<ParamField body="service_account_json" type="string">
+  Service account credentials as a raw JSON string. Ignored when `service_account_base64` is set.
+</ParamField>
+
+<ParamField body="exclude" type="string[]">
+  List of bucket names to skip.
+</ParamField>
+
+**Output**
+
+Each GCS bucket is emitted as a `Bucket` asset. When `extract_blob` is `true`, each object within the bucket is also emitted as a `Blob` resource nested inside the bucket asset.
+
+**Bucket fields**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `my-gcp-project/my-bucket` |
+| `resource.name` | `my-bucket` |
+| `resource.service` | `gcs` |
+| `location` | `ASIA` |
+| `storage_type` | `STANDARD` |
+| `labels` | `{"team": "data-platform"}` |
+| `timestamps.created_at.seconds` | `1551082913` |
+
+**Blob fields** (when `extract_blob: true`)
+
+| Field | Sample value |
+| :---- | :----------- |
+| `urn` | `my-gcp-project/my-bucket/path/to/file.parquet` |
+| `name` | `path/to/file.parquet` |
+| `size` | `311` |
+| `ownership.owners[].name` | `sa@project.iam.gserviceaccount.com` |
+| `timestamps.created_at.seconds` | `1551082913` |
+| `timestamps.updated_at.seconds` | `1551082913` |
+
+</Accordion>
+
+<Accordion title="csv" icon="file-csv">
+
+Extracts table metadata and column names from CSV files. It reads the header row of each CSV file to derive column names. One `Table` asset is emitted per file.
+
+**Prerequisites**
+
+- Read access to the CSV file or directory from the host running Meteor.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: csv
+  scope: local-files
+  config:
+    path: ./data/exports
+```
+
+**Config fields**
+
+<ParamField body="path" type="string" required>
+  Path to a single `.csv` file or a directory. When a directory is provided, all `.csv` files directly inside it are extracted (non-recursive).
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `filename.csv` |
+| `resource.name` | `filename.csv` |
+| `resource.service` | `csv` |
+| `schema.columns[].name` | `order_id` |
+
+</Accordion>
+
+</AccordionGroup>

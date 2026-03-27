@@ -1,0 +1,240 @@
+---
+title: "Sinks"
+description: "Plugins that receive processed metadata records and deliver them to a destination system."
+---
+
+A sink is a plugin that receives batches of `models.Record` values and writes them to a destination — an HTTP endpoint, a message queue, a storage bucket, or any other output target.
+
+At least one sink is required in every recipe. Multiple sinks can be specified and they all receive the same records in parallel.
+
+## How sinks work
+
+Sinks subscribe to the stream as **batch consumers**. After all processors have run for a set of records, each subscribed sink receives the batch and calls its `Sink` method:
+
+```
+(processed records)
+  → sink 1: HTTP POST to metadata API
+  → sink 2: publish to Kafka topic
+  → sink 3: write to GCS bucket
+```
+
+All sinks operate concurrently on the same record batches. A failure in one sink does not affect the others unless `stopOnSinkError` is enabled at the agent level.
+
+## The Syncer interface
+
+Every sink implements the `Syncer` interface defined in `plugins/plugin.go`:
+
+```go plugins/plugin.go
+// Plugin is the base interface shared by all plugin types.
+type Plugin interface {
+    // Info returns the plugin's metadata.
+    Info() Info
+
+    // Validate checks whether the given config is valid for this plugin.
+    Validate(config Config) error
+
+    // Init is called once before running.
+    Init(ctx context.Context, config Config) error
+}
+
+// Syncer is a sink plugin that writes records to a destination.
+type Syncer interface {
+    Plugin
+    Sink(ctx context.Context, batch []models.Record) (err error)
+
+    // Close is called once after all records have been processed.
+    Close() error
+}
+```
+
+`Sink` receives a slice of records. The batch size is configurable at the agent level via `SinkBatchSize`. `Close` is called after the stream shuts down — use it to flush buffers, close connections, or finalise any pending writes.
+
+## Lifecycle
+
+<Steps>
+  <Step title="Validate">
+    `Validate(config)` is called before extraction begins to check that all required config fields are present.
+  </Step>
+  <Step title="Init">
+    `Init(ctx, config)` is called once to open connections, authenticate, and prepare the sink. HTTP clients, Kafka producers, and GCS clients are typically created here.
+  </Step>
+  <Step title="Sink">
+    `Sink(ctx, batch)` is called repeatedly as record batches become available. The sink must write all records in the batch to the destination.
+  </Step>
+  <Step title="Close">
+    `Close()` is called after the extractor finishes and the stream shuts down. Use this to flush any buffered writes and release resources.
+  </Step>
+</Steps>
+
+## Built-in sinks
+
+<AccordionGroup>
+  <Accordion title="http" defaultOpen={true}>
+    Sends records to an HTTP endpoint. Records are serialised to JSON by default.
+
+    ```yaml
+    sinks:
+      - name: http
+        config:
+          method: POST
+          url: "https://compass.example.com/v1beta1/asset"
+          success_code: 200
+          headers:
+            Authorization: "Bearer token123"
+            Content-Type: application/json
+    ```
+
+    | Field | Required | Description |
+    |-------|----------|-------------|
+    | `method` | yes | HTTP method (`POST`, `PUT`, `PATCH`) |
+    | `url` | yes | Destination URL |
+    | `success_code` | no | Expected HTTP response code (default: `200`) |
+    | `headers` | no | Map of request headers to send |
+  </Accordion>
+  <Accordion title="kafka">
+    Publishes records to a Kafka topic.
+
+    ```yaml
+    sinks:
+      - name: kafka
+        config:
+          brokers: "localhost:9092"
+          topic: "target-topic"
+          key_path: ""
+    ```
+
+    | Field | Required | Description |
+    |-------|----------|-------------|
+    | `brokers` | yes | Comma-separated list of Kafka broker addresses |
+    | `topic` | yes | Target Kafka topic |
+    | `key_path` | no | JSON path to use as the Kafka message key |
+  </Accordion>
+  <Accordion title="gcs">
+    Writes records as newline-delimited JSON (NDJSON) to a Google Cloud Storage bucket.
+
+    ```yaml
+    sinks:
+      - name: gcs
+        config:
+          project_id: my-gcp-project
+          url: gcs://my-bucket/metadata-folder
+          object_prefix: github-users
+          service_account_base64: <base64-encoded-service-account-key>
+    ```
+
+    | Field | Required | Description |
+    |-------|----------|-------------|
+    | `project_id` | yes | GCP project ID |
+    | `url` | yes | Destination GCS URL (`gcs://bucket/path`) |
+    | `object_prefix` | no | Prefix added to object names |
+    | `service_account_base64` | no | Base64-encoded service account JSON (alternative to `service_account_json`) |
+    | `service_account_json` | no | Service account JSON object inline |
+  </Accordion>
+  <Accordion title="console">
+    Prints records to stdout. Useful for debugging and local development.
+
+    ```yaml
+    sinks:
+      - name: console
+    ```
+
+    No configuration is required.
+  </Accordion>
+  <Accordion title="file">
+    Writes records to a local file in NDJSON or YAML format.
+
+    ```yaml
+    sinks:
+      - name: file
+        config:
+          path: "./output/metadata.ndjson"
+          format: "ndjson"
+    ```
+
+    | Field | Required | Description |
+    |-------|----------|-------------|
+    | `path` | yes | File path to write to |
+    | `format` | yes | Output format: `ndjson` or `yaml` |
+  </Accordion>
+  <Accordion title="stencil">
+    Uploads metadata to a Stencil schema registry.
+
+    ```yaml
+    sinks:
+      - name: stencil
+        config:
+          host: https://stencil.example.com
+          namespace_id: myNamespace
+          schema_id: mySchema
+          format: json
+          send_format_header: false
+    ```
+
+    | Field | Required | Description |
+    |-------|----------|-------------|
+    | `host` | yes | Stencil server URL |
+    | `namespace_id` | yes | Target namespace in Stencil |
+    | `schema_id` | yes | Target schema in the namespace |
+    | `format` | yes | Schema format (e.g. `json`, `avro`, `protobuf`) |
+    | `send_format_header` | no | Whether to include format in the request header |
+  </Accordion>
+  <Accordion title="compass">
+    Sends records to Raystack Compass, the metadata discovery and lineage service.
+
+    ```yaml
+    sinks:
+      - name: compass
+        config:
+          host: https://compass.example.com
+          headers:
+            Compass-User-UUID: user@example.com
+    ```
+  </Accordion>
+  <Accordion title="frontier">
+    Sends user records to Raystack Frontier via gRPC.
+
+    ```yaml
+    sinks:
+      - name: frontier
+        config:
+          host: frontier.example.com:5556
+    ```
+  </Accordion>
+</AccordionGroup>
+
+See the [sinks reference](/reference/sinks) for full configuration details.
+
+## Using multiple sinks
+
+All sinks in a recipe receive the same records. Specify multiple sinks when you want to deliver metadata to more than one destination from a single extraction run:
+
+```yaml
+sinks:
+  - name: http
+    config:
+      method: POST
+      url: "https://compass.example.com/v1beta1/asset"
+  - name: kafka
+    config:
+      brokers: "localhost:9092"
+      topic: "metadata-events"
+  - name: console
+```
+
+<Note>
+Multiple sinks run concurrently. A slow or failing sink does not delay other sinks. If you need the run to stop when a sink fails, set `stopOnSinkError: true` in the agent configuration.
+</Note>
+
+## Serialisation
+
+By default, records are serialised to JSON before being passed to sinks. Some sinks (like `gcs`) always use NDJSON. Refer to each sink's documentation for format-specific behaviour.
+
+## Retry behaviour
+
+The agent retries failed `Sink` calls automatically. Each retry attempt is logged and recorded in the sink retry count metric:
+
+```
+WARN retrying sink in 2s  sink=http  error=connection refused
+```
+
+Once retries are exhausted, the error is logged. The run continues unless `stopOnSinkError` is enabled.

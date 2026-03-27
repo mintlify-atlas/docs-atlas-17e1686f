@@ -1,0 +1,84 @@
+---
+title: Messaging Extractors
+description: Reference for messaging and streaming extractors supported by Meteor, including Kafka.
+---
+
+Messaging extractors collect metadata from event streaming and message queue systems. Meteor currently supports Kafka topic discovery with optional TLS mutual authentication.
+
+<AccordionGroup>
+
+<Accordion title="kafka" icon="message-square">
+
+Extracts topic metadata from an Apache Kafka cluster by querying the broker for available topics.
+
+**Prerequisites**
+
+- Network access to the Kafka broker from the host running Meteor.
+- If the cluster requires TLS client authentication, provide the certificate, key, and CA files.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: kafka
+  config:
+    broker: "localhost:9092"
+```
+
+**Sample recipe with TLS**
+
+```yaml
+source:
+  name: kafka
+  config:
+    broker: "kafka.example.com:9093"
+    auth_config:
+      tls:
+        enabled: true
+        insecure_skip_verify: false
+        cert_file: "/opt/client.cer.pem"
+        key_file: "/opt/client.key.pem"
+        ca_file: "/opt/caCertFile.cer.pem"
+```
+
+**Config fields**
+
+<ParamField body="broker" type="string" required>
+  Kafka broker address in `host:port` format. If the cluster has multiple brokers, providing any one bootstrap broker is sufficient.
+</ParamField>
+
+<ParamField body="auth_config.tls.enabled" type="boolean" default="false">
+  Set to `true` to enable TLS for the broker connection.
+</ParamField>
+
+<ParamField body="auth_config.tls.insecure_skip_verify" type="boolean" default="false">
+  When `true`, the client skips verification of the broker's certificate chain and hostname. Not recommended for production.
+</ParamField>
+
+<ParamField body="auth_config.tls.cert_file" type="string">
+  Path to the client certificate PEM file used for mutual TLS authentication.
+</ParamField>
+
+<ParamField body="auth_config.tls.key_file" type="string">
+  Path to the client private key PEM file used for mutual TLS authentication.
+</ParamField>
+
+<ParamField body="auth_config.tls.ca_file" type="string">
+  Path to the certificate authority PEM file used to verify the broker's certificate.
+</ParamField>
+
+**Output**
+
+Each Kafka topic is emitted as a `Topic` asset.
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `my-topic` |
+| `resource.name` | `my-topic` |
+| `resource.service` | `kafka` |
+
+<Note>Schema Registry integration is not currently supported. The Kafka extractor collects topic names and basic metadata only. Profile, schema, ownership, and lineage fields are not populated.</Note>
+
+</Accordion>
+
+</AccordionGroup>

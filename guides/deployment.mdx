@@ -1,0 +1,207 @@
+---
+title: "Deployment"
+description: "Run Meteor in production with Docker, configure it via meteor.yaml or environment variables, and instrument it with OpenTelemetry."
+---
+
+Meteor is a stateless CLI binary that is straightforward to deploy. This page covers container-based deployment, the full configuration reference, and how to enable distributed tracing with OpenTelemetry.
+
+## Docker
+
+The official image is built on Alpine and ships with the `meteor` binary at `/usr/bin/meteor`:
+
+```dockerfile
+FROM alpine:latest
+COPY meteor /usr/bin/meteor
+RUN apk update && apk add ca-certificates curl tzdata
+CMD ["meteor"]
+```
+
+Pull and run the published image:
+
+```bash
+docker pull raystack/meteor
+```
+
+Mount your recipes directory and config file so Meteor can access them:
+
+```bash
+docker run --rm \
+  -v $(pwd)/recipes:/recipes \
+  -v $(pwd)/meteor.yaml:/etc/meteor/meteor.yaml \
+  raystack/meteor meteor run /recipes/ -c /etc/meteor/meteor.yaml
+```
+
+### Running as a Kubernetes CronJob
+
+For scheduled metadata collection, deploy Meteor as a Kubernetes `CronJob`. In the Raystack ecosystem, Helm charts are maintained at [github.com/raystack/charts](https://github.com/raystack/charts).
+
+A minimal CronJob manifest looks like:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: meteor-nightly
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: meteor
+              image: raystack/meteor:latest
+              command: ["meteor", "run", "/recipes/"]
+              volumeMounts:
+                - name: recipes
+                  mountPath: /recipes
+                - name: config
+                  mountPath: /etc/meteor
+          volumes:
+            - name: recipes
+              configMap:
+                name: meteor-recipes
+            - name: config
+              secret:
+                secretName: meteor-config
+```
+
+## Configuration file
+
+Meteor looks for `./meteor.yaml` by default. Pass a different path with the `-c` flag:
+
+```bash
+meteor run recipe.yml -c /etc/meteor/meteor.yaml
+```
+
+Copy the sample config to get started:
+
+```bash
+cp config/meteor.yaml.sample meteor.yaml
+```
+
+Full `meteor.yaml` with all options and their defaults:
+
+```yaml
+# meteor.yaml
+
+# Logging
+LOG_LEVEL: info                        # Verbosity: debug, info, warn, error
+
+# Retry behaviour
+MAX_RETRIES: 5                         # Max plugin retry attempts
+RETRY_INITIAL_INTERVAL_SECONDS: 5      # Seconds before the first retry
+
+# Error handling
+STOP_ON_SINK_ERROR: false              # Abort the whole recipe on any sink error
+
+# Batching
+SINK_BATCH_SIZE: 1                     # Number of records per sink write call
+
+# Application identity
+APP_NAME: meteor
+
+# OpenTelemetry
+OTEL_ENABLED: false
+OTEL_COLLECTOR_ADDR: "localhost:4317"
+OTEL_TRACE_SAMPLE_PROBABILITY: 1       # 0.0 – 1.0; 1 = trace everything
+```
+
+## Configuration reference
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `LOG_LEVEL` | string | `info` | Log verbosity. Accepts `debug`, `info`, `warn`, `error`. |
+| `MAX_RETRIES` | int | `5` | Maximum number of retry attempts for a failing plugin before the recipe is marked as failed. |
+| `RETRY_INITIAL_INTERVAL_SECONDS` | int | `5` | Wait time in seconds before the first retry. Subsequent retries use exponential backoff. |
+| `STOP_ON_SINK_ERROR` | bool | `false` | When `true`, a sink error immediately aborts the recipe run. When `false`, errors are recorded and the run continues. |
+| `SINK_BATCH_SIZE` | int | `1` | Number of asset records sent to a sink in a single call. Increase to improve throughput for sinks that support batching. |
+| `APP_NAME` | string | `meteor` | Service name reported in logs and OpenTelemetry traces. |
+| `OTEL_ENABLED` | bool | `false` | Enable OpenTelemetry tracing and metrics export. |
+| `OTEL_COLLECTOR_ADDR` | string | `localhost:4317` | gRPC address of the OpenTelemetry collector endpoint. |
+| `OTEL_TRACE_SAMPLE_PROBABILITY` | float | `1` | Fraction of traces to sample. `1` = 100%, `0.1` = 10%. |
+
+## Environment variables
+
+Every configuration key can be set as an environment variable. Meteor reads environment variables with the same names as the YAML keys:
+
+```bash
+export LOG_LEVEL=debug
+export MAX_RETRIES=3
+export STOP_ON_SINK_ERROR=true
+export OTEL_ENABLED=true
+export OTEL_COLLECTOR_ADDR=otel-collector:4317
+```
+
+<Note>
+Environment variables take precedence over values in `meteor.yaml` when the same key appears in both.
+</Note>
+
+In Kubernetes, inject these from a `Secret` or `ConfigMap`:
+
+```yaml
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: OTEL_ENABLED
+    value: "true"
+  - name: OTEL_COLLECTOR_ADDR
+    valueFrom:
+      configMapKeyRef:
+        name: meteor-config
+        key: otel_collector_addr
+```
+
+## OpenTelemetry
+
+Meteor supports OpenTelemetry for distributed tracing. When `OTEL_ENABLED: true`, Meteor exports traces to a collector over gRPC (OTLP).
+
+<Steps>
+  <Step title="Enable OTEL in your config">
+    ```yaml
+    OTEL_ENABLED: true
+    OTEL_COLLECTOR_ADDR: "otel-collector:4317"
+    OTEL_TRACE_SAMPLE_PROBABILITY: 1
+    APP_NAME: meteor-production
+    ```
+  </Step>
+
+  <Step title="Start an OpenTelemetry collector">
+    Any OpenTelemetry-compatible collector works. A minimal Docker Compose setup:
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector:latest
+        ports:
+          - "4317:4317"
+        volumes:
+          - ./otel-collector-config.yaml:/etc/otel/config.yaml
+        command: ["--config", "/etc/otel/config.yaml"]
+    ```
+  </Step>
+
+  <Step title="Run Meteor">
+    ```bash
+    meteor run recipes/ -c meteor.yaml
+    ```
+
+    Traces are emitted for each recipe run and can be viewed in Jaeger, Tempo, or any OTLP-compatible backend.
+  </Step>
+</Steps>
+
+<Tip>
+Set `OTEL_TRACE_SAMPLE_PROBABILITY: 0.1` in high-volume environments to reduce the overhead of capturing every trace.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Running recipes" icon="play" href="/guides/running-recipes">
+    Understand the run lifecycle, flags, and output format.
+  </Card>
+  <Card title="Contribute" icon="code-pull-request" href="/guides/contribute">
+    Add a new extractor, processor, or sink.
+  </Card>
+</CardGroup>

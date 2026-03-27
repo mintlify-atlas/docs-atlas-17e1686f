@@ -1,0 +1,207 @@
+---
+title: "Managing recipes"
+description: "Create recipes with meteor new, generate batches from templates with meteor gen, and validate them with meteor lint."
+---
+
+A recipe is a YAML file that tells Meteor what to extract, how to process it, and where to send it. This guide covers how to create, generate, and validate recipes before running them.
+
+## Plugin types
+
+Every recipe is built from three kinds of plugins:
+
+<CardGroup cols={3}>
+  <Card title="Extractors" icon="database">
+    Source plugins. Pull metadata from databases, dashboards, data warehouses, and other systems.
+  </Card>
+  <Card title="Processors" icon="gear">
+    Enrichment plugins. Transform or augment metadata between extraction and delivery.
+  </Card>
+  <Card title="Sinks" icon="arrow-right-to-bracket">
+    Destination plugins. Deliver processed metadata to a catalog, stream, or console.
+  </Card>
+</CardGroup>
+
+List all available plugins with the `meteor list` command:
+
+```bash
+# List all extractors
+meteor list extractors
+
+# List all extractors (alias)
+meteor list e
+
+# List all sinks
+meteor list sinks
+
+# List all sinks (alias)
+meteor list s
+
+# List all processors
+meteor list processors
+
+# List all processors (alias)
+meteor list p
+```
+
+## Creating a recipe with `meteor new`
+
+The `meteor new recipe` command generates a skeleton recipe and prints it to stdout. Redirect to a file to save it.
+
+```bash
+meteor new recipe <name> -n <namespace> -e <extractor> -s <sinks> -p <processors>
+```
+
+<Warning>
+The `-n` / `--scope` flag is required. It sets the URN namespace for all assets extracted by the recipe.
+</Warning>
+
+### Examples
+
+<CodeGroup>
+
+```bash Single sink
+# Generate a recipe with a BigQuery extractor and a console sink
+meteor new recipe sample -n my-org -e bigquery -s console
+```
+
+```bash Multiple sinks
+# Comma-separate multiple sinks
+meteor new recipe sample -n my-org -e bigquery -s compass,kafka -p enrich
+```
+
+```bash Save to file
+# Redirect stdout to create the file
+meteor new recipe sample -n my-org -e bigquery -s compass > recipe.yaml
+```
+
+</CodeGroup>
+
+If you omit `-e`, `-s`, or `-p`, the CLI launches an interactive prompt to select from available plugins:
+
+```
+? Select an extractor  [Use arrows to move, type to filter]
+  bigquery
+  kafka
+> postgres
+  ...
+```
+
+### `meteor new` flags
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--extractor` | `-e` | No (interactive) | Extractor plugin name |
+| `--scope` | `-n` | **Yes** | URN namespace for extracted assets |
+| `--sinks` | `-s` | No (interactive) | Comma-separated list of sink plugin names |
+| `--processors` | `-p` | No (interactive) | Comma-separated list of processor plugin names |
+
+## Generating batches from a template with `meteor gen`
+
+When you need many recipes that share the same structure but differ in a few values (for example, one recipe per database instance), use `meteor gen` to stamp them all out from a single template.
+
+```bash
+meteor gen my-template.yaml -o ./output-dir -d ./data.yaml
+```
+
+The template file is a standard Go `text/template` file. The data file is a YAML list of objects, each producing one output recipe:
+
+```yaml
+# data.yaml — one entry per generated recipe
+- FileName: sales-db
+  Data:
+    host: sales.example.com
+    port: "5432"
+    database: sales
+
+- FileName: analytics-db
+  Data:
+    host: analytics.example.com
+    port: "5432"
+    database: analytics
+```
+
+The template can reference any key under `Data` via `{{ .Data.key }}`:
+
+```yaml
+# my-template.yaml
+name: {{ .Data.name }}
+source:
+  name: postgres
+  scope: my-org
+  config:
+    host: {{ .Data.host }}
+    port: {{ .Data.port }}
+    database: {{ .Data.database }}
+sinks:
+  - name: compass
+```
+
+<Note>
+If `Data.name` is not set, Meteor uses `FileName` as the recipe name automatically.
+</Note>
+
+### `meteor gen` flags
+
+| Flag | Short | Required | Description |
+|------|-------|----------|-------------|
+| `--output` | `-o` | No | Output directory for generated recipe files |
+| `--data` | `-d` | No | Path to the YAML data file |
+
+## Linting recipes with `meteor lint`
+
+The linter validates recipe files against the registered plugin registry. It checks that:
+
+- The extractor name is a registered plugin.
+- All sink and processor names are registered plugins.
+- Each plugin's configuration passes its own validation rules.
+
+```bash
+# Lint a single recipe
+meteor lint recipe.yml
+
+# Lint all recipes in a directory
+meteor lint _recipes/
+
+# Lint all recipes in the current directory
+meteor lint .
+```
+
+The alias `l` also works:
+
+```bash
+meteor l recipe.yml
+```
+
+Lint output shows a per-recipe status and error count:
+
+```
+All checks were successful
+0 failing, 3 successful, and 3 total
+
+✓  my-bigquery-recipe   (0 errors, 0 warnings)
+✓  my-postgres-recipe   (0 errors, 0 warnings)
+✓  my-kafka-recipe      (0 errors, 0 warnings)
+```
+
+When errors are found, Meteor prints the offending line number:
+
+```
+my-recipe: invalid 'biqguery' extractor on line: 4
+my-recipe: invalid bigquery extractor config on line: 12: host is required
+
+Some checks were not successful
+1 failing, 0 successful, and 1 total
+```
+
+<Tip>Run `meteor lint` in CI before deploying updated recipes to catch typos and missing required fields early.</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Running recipes" icon="play" href="/guides/running-recipes">
+    Execute recipes, pass variables, and interpret run results.
+  </Card>
+  <Card title="Deployment" icon="server" href="/guides/deployment">
+    Configure Meteor for production workloads.
+  </Card>
+</CardGroup>

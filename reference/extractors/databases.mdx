@@ -1,0 +1,600 @@
+---
+title: Database Extractors
+description: Reference for all database extractors supported by Meteor, including BigQuery, PostgreSQL, MySQL, MSSQL, MongoDB, ClickHouse, Cassandra, CouchDB, Oracle, MariaDB, Redshift, Presto, Snowflake, and Bigtable.
+---
+
+Database extractors collect metadata from relational, columnar, document, and wide-column data stores. Each extractor produces table-level assets including schema, column definitions, and row-count profiles.
+
+## Feature matrix
+
+| Extractor | Attributes | Profile | Schema | Lineage | Ownership |
+| :-------- | :--------- | :------ | :----- | :------ | :-------- |
+| `bigquery` | ✅ | ✅ | ✅ | ✅ | ✗ |
+| `postgres` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `mysql` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `mssql` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `mongodb` | ✅ | ✅ | ✗ | ✗ | ✗ |
+| `clickhouse` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `cassandra` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `couchdb` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `oracle` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `mariadb` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `redshift` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `presto` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `snowflake` | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `bigtable` | ✅ | ✗ | ✗ | ✗ | ✗ |
+
+<AccordionGroup>
+
+<Accordion title="bigquery" icon="database">
+
+Extracts table metadata, column schema, row profiles, partition/clustering data, and optional query-based lineage from Google BigQuery.
+
+**Prerequisites**
+
+- A Google Cloud service account with at least the `BigQuery Data Viewer` and `BigQuery Job User` roles.
+- If collecting audit log usage, the service account also needs the `bigquery.privateLogsViewer` role.
+- Provide credentials via `service_account_base64`, `service_account_json`, or the `GOOGLE_APPLICATION_CREDENTIALS` environment variable (Application Default Credentials).
+
+**Sample recipe**
+
+```yaml
+source:
+  name: bigquery
+  config:
+    project_id: my-gcp-project
+    table_pattern: gofood.fact_
+    max_preview_rows: 3
+    max_page_size: 100
+    include_column_profile: true
+    build_view_lineage: true
+    exclude:
+      datasets:
+        - dataset_a
+        - dataset_b
+      tables:
+        - dataset_c.table_a
+    service_account_base64: _________BASE64_ENCODED_SERVICE_ACCOUNT_________________
+    collect_table_usage: false
+    usage_period_in_day: 7
+    usage_project_ids:
+      - my-gcp-project
+```
+
+**Config fields**
+
+<ParamField body="project_id" type="string" required>
+  Google Cloud project ID that contains the BigQuery datasets to crawl.
+</ParamField>
+
+<ParamField body="service_account_base64" type="string">
+  Service account JSON encoded as a base64 string. Takes precedence over `service_account_json` when both are provided. If omitted, falls back to Application Default Credentials.
+</ParamField>
+
+<ParamField body="service_account_json" type="string">
+  Service account credentials as a raw JSON string. Ignored when `service_account_base64` is set.
+</ParamField>
+
+<ParamField body="table_pattern" type="string">
+  Regex pattern used to filter which tables to include. For example, `gofood.fact_` matches any table whose fully-qualified name contains that prefix.
+</ParamField>
+
+<ParamField body="max_page_size" type="number" default="100">
+  Maximum page size hint used when listing datasets, tables, and rows via the BigQuery API.
+</ParamField>
+
+<ParamField body="include_column_profile" type="boolean" default="false">
+  When `true`, collects column-level statistics: min, max, median, average, top values, and frequency.
+</ParamField>
+
+<ParamField body="max_preview_rows" type="number" default="30">
+  Number of preview rows to fetch per table. Set to `0` to skip preview rows entirely. Set to `-1` to suppress the `preview_rows` key in the asset output.
+</ParamField>
+
+<ParamField body="mix_values" type="boolean" default="false">
+  When `true`, column sample values are interleaved into the preview rows output.
+</ParamField>
+
+<ParamField body="exclude.datasets" type="string[]">
+  List of dataset names to skip entirely.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`dataset.table`) to skip.
+</ParamField>
+
+<ParamField body="collect_table_usage" type="boolean" default="false">
+  When `true`, parses BigQuery audit logs to populate usage counts, join patterns, and filter expressions.
+</ParamField>
+
+<ParamField body="usage_period_in_day" type="number" default="7">
+  How many days of audit logs to look back when `collect_table_usage` is enabled.
+</ParamField>
+
+<ParamField body="usage_project_ids" type="string[]">
+  GCP project IDs from which to read audit logs. Defaults to `project_id`.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="postgres" icon="database">
+
+Extracts table metadata and column schema from PostgreSQL databases.
+
+**Prerequisites**
+
+- A PostgreSQL user with `SELECT` privileges on `information_schema` and the target databases.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: postgres
+  config:
+    connection_url: postgres://admin:pass123@localhost:5432/testDB?sslmode=disable
+    exclude: primaryDB,secondaryDB
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  PostgreSQL connection URL. Format: `postgres://user:password@host:port/dbname?sslmode=disable`
+</ParamField>
+
+<ParamField body="exclude" type="string">
+  Comma-separated list of database names to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="mysql" icon="database">
+
+Extracts table metadata and column schema from MySQL databases.
+
+**Prerequisites**
+
+- A MySQL user with `SELECT` privileges on `information_schema` and the target schemas.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: mysql
+  config:
+    connection_url: admin:pass123@tcp(localhost:3306)/
+    exclude:
+      databases:
+        - database_a
+        - database_b
+      tables:
+        - database_c.table_a
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  MySQL DSN. Format: `user:password@tcp(host:port)/`
+</ParamField>
+
+<ParamField body="exclude.databases" type="string[]">
+  List of database names to skip.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`database.table`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="mssql" icon="database">
+
+Extracts table metadata and column schema from Microsoft SQL Server databases.
+
+**Prerequisites**
+
+- A SQL Server login with `VIEW DEFINITION` and `SELECT` permissions on the target databases.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: mssql
+  config:
+    connection_url: sqlserver://admin:pass123@localhost:1433/
+    exclude:
+      databases:
+        - database_a
+        - database_b
+      tables:
+        - database_c.table_a
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  SQL Server connection URL. Format: `sqlserver://user:password@host:port/`
+</ParamField>
+
+<ParamField body="exclude.databases" type="string[]">
+  List of database names to skip.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`database.table`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="mongodb" icon="database">
+
+Extracts collection metadata and row counts from MongoDB databases. Schema extraction is not supported because MongoDB is schema-less.
+
+**Prerequisites**
+
+- A MongoDB user with `listDatabases` and `listCollections` privileges.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: mongodb
+  config:
+    connection_url: mongodb://admin:pass123@localhost:27017
+    exclude:
+      databases:
+        - database_a
+        - database_b
+      collections:
+        - database_c.collection_a
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  MongoDB connection URI. Format: `mongodb://user:password@host:port`
+</ParamField>
+
+<ParamField body="exclude.databases" type="string[]">
+  List of database names to skip.
+</ParamField>
+
+<ParamField body="exclude.collections" type="string[]">
+  List of fully-qualified collection names (`database.collection`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="clickhouse" icon="database">
+
+Extracts table metadata and column schema from ClickHouse databases.
+
+**Prerequisites**
+
+- A ClickHouse user with `SELECT` access to `system.tables` and `system.columns`.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: clickhouse
+  config:
+    connection_url: clickhouse://username:password@clickhouse-server:9000
+    exclude:
+      databases:
+        - database_a
+        - database_b
+      tables:
+        - database_c.table_a
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  ClickHouse connection URL. Format: `clickhouse://user:password@host:port` or `tcp://host:port?username=user&password=pass`
+</ParamField>
+
+<ParamField body="exclude.databases" type="string[]">
+  List of database names to skip.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`database.table`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="cassandra" icon="database">
+
+Extracts table metadata and column schema from Apache Cassandra keyspaces.
+
+**Prerequisites**
+
+- A Cassandra user with `SELECT` privileges on `system_schema`.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: cassandra
+  config:
+    user_id: admin
+    password: "1234"
+    host: localhost
+    port: 9042
+    exclude:
+      keyspaces:
+        - mykeyspace
+      tables:
+        - mykeyspace_2.tableName_1
+```
+
+**Config fields**
+
+<ParamField body="user_id" type="string" required>
+  Username for Cassandra authentication.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password for Cassandra authentication.
+</ParamField>
+
+<ParamField body="host" type="string" required>
+  Hostname or IP address of the Cassandra node.
+</ParamField>
+
+<ParamField body="port" type="number" required>
+  Port on which Cassandra is listening. The default Cassandra native transport port is `9042`.
+</ParamField>
+
+<ParamField body="exclude.keyspaces" type="string[]">
+  List of keyspace names to skip.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`keyspace.table`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="couchdb" icon="database">
+
+Extracts document field schema from Apache CouchDB databases.
+
+**Prerequisites**
+
+- A CouchDB user with `_reader` access to the target databases.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: couchdb
+  config:
+    connection_url: http://admin:pass123@localhost:5984/
+    exclude: database_a,database_b
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  CouchDB server URL including credentials. Format: `http://user:password@host:port/`
+</ParamField>
+
+<ParamField body="exclude" type="string">
+  Comma-separated list of database names to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="oracle" icon="database">
+
+Extracts table metadata and column schema from Oracle Database instances.
+
+**Prerequisites**
+
+- An Oracle user with `SELECT` privileges on `ALL_TABLES` and `ALL_TAB_COLUMNS`.
+- The [`godror`](https://github.com/godror/godror) Oracle client libraries must be available on the host running Meteor.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: oracle
+  config:
+    connection_url: oracle://admin:1234@localhost:1521/xe
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  Oracle connection string. Format: `oracle://user:password@host:port/service_name`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="mariadb" icon="database">
+
+Extracts table metadata and column schema from MariaDB databases.
+
+**Prerequisites**
+
+- A MariaDB user with `SELECT` privileges on `information_schema`.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: mariadb
+  config:
+    connection_url: admin:pass123@tcp(localhost:3306)/
+    exclude:
+      databases:
+        - database_a
+        - database_b
+      tables:
+        - database_c.table_a
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  MariaDB DSN. Format: `user:password@tcp(host:port)/`
+</ParamField>
+
+<ParamField body="exclude.databases" type="string[]">
+  List of database names to skip.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`database.table`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="redshift" icon="database">
+
+Extracts table metadata and column schema from Amazon Redshift clusters using temporary IAM credentials.
+
+**Prerequisites**
+
+- AWS credentials (via environment or instance profile) with `redshift:GetClusterCredentials` permission.
+- The IAM user or role must also have a corresponding Redshift database user with `SELECT` on `information_schema`.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: redshift
+  config:
+    cluster_id: cluster_test
+    db_name: testDB
+    db_user: testUser
+    aws_region: us-east-1
+    exclude: secondaryDB
+```
+
+**Config fields**
+
+<ParamField body="cluster_id" type="string" required>
+  Redshift cluster identifier.
+</ParamField>
+
+<ParamField body="db_name" type="string" required>
+  Default database to connect to on the cluster.
+</ParamField>
+
+<ParamField body="db_user" type="string" required>
+  Redshift database username.
+</ParamField>
+
+<ParamField body="aws_region" type="string" required>
+  AWS region where the cluster resides (e.g. `us-east-1`).
+</ParamField>
+
+<ParamField body="exclude" type="string">
+  Comma-separated list of database names to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="presto" icon="database">
+
+Extracts table metadata and column schema across all catalogs exposed by a Presto (or Trino) coordinator.
+
+**Prerequisites**
+
+- Network access to the Presto HTTP coordinator endpoint.
+- A Presto user with `SELECT` on `information_schema` in the target catalogs.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: presto
+  config:
+    connection_url: http://user:pass@localhost:8080
+    exclude_catalog: memory,system
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  Presto coordinator URL including credentials. Format: `http://user:pass@host:port`
+</ParamField>
+
+<ParamField body="exclude_catalog" type="string">
+  Comma-separated list of catalog names to skip (e.g. `memory,system,tpcds`).
+</ParamField>
+
+</Accordion>
+
+<Accordion title="snowflake" icon="database">
+
+Extracts table metadata and column schema from Snowflake databases.
+
+**Prerequisites**
+
+- A Snowflake user with the `USAGE` privilege on target databases and schemas, plus `SELECT` on `INFORMATION_SCHEMA`.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: snowflake
+  config:
+    connection_url: user:password@my_organization-my_account/mydb
+    exclude:
+      databases:
+        - database_a
+        - database_b
+      tables:
+        - database_c.table_a
+```
+
+**Config fields**
+
+<ParamField body="connection_url" type="string" required>
+  Snowflake DSN. Format: `user:password@organization-account/database` or `user:password@account/database`
+</ParamField>
+
+<ParamField body="exclude.databases" type="string[]">
+  List of database names to skip.
+</ParamField>
+
+<ParamField body="exclude.tables" type="string[]">
+  List of fully-qualified table names (`database.table`) to skip.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="bigtable" icon="database">
+
+Extracts table and column-family metadata from Google Cloud Bigtable instances.
+
+**Prerequisites**
+
+- A Google Cloud service account with the `Bigtable Reader` role, or set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the path of a service account JSON file when `service_account_base64` is not provided.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: bigtable
+  config:
+    project_id: my-gcp-project
+    service_account_base64: _________BASE64_ENCODED_SERVICE_ACCOUNT_________________
+```
+
+**Config fields**
+
+<ParamField body="project_id" type="string" required>
+  Google Cloud project ID that contains the Bigtable instances to crawl.
+</ParamField>
+
+<ParamField body="service_account_base64" type="string">
+  Service account JSON encoded as a base64 string. If omitted, the extractor falls back to the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+</ParamField>
+
+</Accordion>
+
+</AccordionGroup>

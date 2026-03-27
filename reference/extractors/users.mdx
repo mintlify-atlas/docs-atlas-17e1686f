@@ -1,0 +1,154 @@
+---
+title: User & Identity Extractors
+description: Reference for user and identity extractors supported by Meteor, including GitHub, Google Workspace (G Suite), and Frontier.
+---
+
+User extractors collect personnel and identity metadata from external directories, version control hosts, and internal identity platforms. Each extractor emits `User` assets containing email addresses, display names, statuses, and (where supported) group memberships.
+
+## Feature matrix
+
+| Extractor | Email | Username | Full name | Active status | Manager email | Memberships |
+| :-------- | :---- | :------- | :-------- | :------------ | :------------ | :---------- |
+| `github` | ✅ | ✅ | ✅ | ✅ | ✗ | ✗ |
+| `gsuite` | ✅ | ✗ | ✅ | ✅ | ✅ | ✗ |
+| `frontier` | ✅ | ✅ | ✅ | ✅ | ✗ | ✅ |
+
+<AccordionGroup>
+
+<Accordion title="github" icon="github">
+
+Extracts user profiles for all members of a GitHub organization.
+
+**Prerequisites**
+
+- A GitHub personal access token with the `read:org` scope.
+- The token owner must be a member of the target organization (or the organization must have public membership listings).
+
+**Sample recipe**
+
+```yaml
+source:
+  name: github
+  config:
+    org: raystack
+    token: ghp_xxxxxxxxxxxxxxxxxxxx
+```
+
+**Config fields**
+
+<ParamField body="org" type="string" required>
+  Name of the GitHub organization to crawl (e.g. `raystack`).
+</ParamField>
+
+<ParamField body="token" type="string" required>
+  GitHub personal access token used to authenticate API requests. Requires the `read:org` scope.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `https://github.com/ravisuhag` |
+| `email` | `suhag.ravi@gmail.com` |
+| `username` | `ravisuhag` |
+| `full_name` | `Ravi Suhag` |
+| `status` | `active` |
+
+</Accordion>
+
+<Accordion title="gsuite" icon="mail">
+
+Extracts user profiles from the Google Workspace (G Suite) directory using the Admin SDK Directory API.
+
+**Prerequisites**
+
+- A Google Cloud service account with [domain-wide delegation](https://developers.google.com/admin-sdk/directory/v1/guides/delegation) enabled.
+- A Google Workspace admin account that the service account can impersonate (specified via `user_email`).
+- The service account must have the following OAuth scopes granted in the Google Workspace Admin console:
+  - `https://www.googleapis.com/auth/admin.directory.user.readonly`
+
+**Sample recipe**
+
+```yaml
+source:
+  name: gsuite
+  config:
+    user_email: admin@example.com
+    service_account_json: |
+      {
+        "type": "service_account",
+        "project_id": "my-project",
+        "private_key_id": "xxxxxxx",
+        "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n",
+        "client_email": "meteor@my-project.iam.gserviceaccount.com",
+        "client_id": "xxxxxxx",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token"
+      }
+```
+
+**Config fields**
+
+<ParamField body="user_email" type="string" required>
+  Email address of the Google Workspace admin user to impersonate. Only users with Admin API access can be used here.
+</ParamField>
+
+<ParamField body="service_account_json" type="string" required>
+  Service account credentials JSON as a string. The service account must have domain-wide delegation configured.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `email` | `doe.john@example.com` |
+| `full_name` | `Jon Doe` |
+| `status` | `active` |
+| `attributes.aliases` | `john.doe@example.com` |
+| `attributes.org_unit_path` | `/Engineering` |
+| `attributes.organizations[].cost_center` | `platform` |
+| `attributes.relations[].type` | `manager` |
+
+</Accordion>
+
+<Accordion title="frontier" icon="users">
+
+Extracts user profiles and group memberships from a [Frontier](https://github.com/raystack/frontier) identity and access management server via gRPC.
+
+**Prerequisites**
+
+- Network access to the Frontier gRPC endpoint from the host running Meteor.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: frontier
+  config:
+    host: frontier.example.com:80
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Frontier gRPC server address in `host:port` format.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `frontier::https://frontier-host.com/jonsnow` |
+| `resource.name` | `Jon Snow` |
+| `resource.service` | `frontier` |
+| `resource.type` | `user` |
+| `email` | `snow.jon@gmail.com` |
+| `username` | `jonsnow` |
+| `full_name` | `Jon Snow` |
+| `status` | `active` |
+| `memberships[].group_urn` | `grpname:grpId` |
+| `memberships[].role` | `rolename` |
+
+</Accordion>
+
+</AccordionGroup>

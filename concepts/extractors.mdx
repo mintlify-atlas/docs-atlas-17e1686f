@@ -1,0 +1,158 @@
+---
+title: "Extractors"
+description: "Plugins that connect to a data source and emit structured metadata records into the Meteor pipeline."
+---
+
+An extractor is a plugin that reads metadata from a specific data source and emits it as a stream of `models.Record` values. Each extractor targets one type of source — a database, message queue, dashboard, object store, or SaaS service.
+
+Exactly one extractor runs per recipe, declared under the `source` field.
+
+## How extractors work
+
+When the agent executes a recipe, it calls three methods on the extractor in order:
+
+<Steps>
+  <Step title="Validate">
+    The agent calls `Validate(config)` to check that all required configuration fields are present and valid. If validation fails, the recipe is rejected before any connection is made.
+  </Step>
+  <Step title="Init">
+    The agent calls `Init(ctx, config)` to open connections, authenticate, and prepare the extractor to run. This is where database clients, HTTP clients, and other resources are initialised.
+  </Step>
+  <Step title="Extract">
+    The agent calls `Extract(ctx, emit)` in a goroutine. The extractor iterates over its source, constructs a `models.Record` for each asset, and calls `emit(record)` to push it into the stream. The stream then routes records through processors and into sinks.
+  </Step>
+</Steps>
+
+## The Extractor interface
+
+Every extractor implements the `Extractor` interface defined in `plugins/plugin.go`:
+
+```go plugins/plugin.go
+// Plugin is the base interface shared by all plugin types.
+type Plugin interface {
+    // Info returns the plugin's metadata.
+    Info() Info
+
+    // Validate checks whether the given config is valid for this plugin.
+    Validate(config Config) error
+
+    // Init is called once before running. Use it to open connections
+    // and initialise any external clients.
+    Init(ctx context.Context, config Config) error
+}
+
+// Extractor is a plugin that extracts metadata from a source.
+type Extractor interface {
+    Plugin
+    Extract(ctx context.Context, emit Emit) (err error)
+}
+
+// Emit is a function the extractor calls to push a record into the stream.
+type Emit func(models.Record)
+```
+
+The `Config` struct passed to `Validate` and `Init` contains two fields:
+
+```go
+type Config struct {
+    URNScope  string                 // the "scope" field from the recipe source
+    RawConfig map[string]interface{} // the "config" block from the recipe source
+}
+```
+
+<Note>
+`URNScope` is required by all extractors. It is used to construct globally unique URNs for extracted assets. Set it via the `scope` field in the recipe's `source` block.
+</Note>
+
+## Plugin info
+
+Every extractor also implements `Info()`, which returns structured metadata about the plugin:
+
+```go
+type Info struct {
+    Description  string   // human-readable description
+    SampleConfig string   // example config YAML
+    Tags         []string // categorisation tags
+    Summary      string   // one-line summary
+}
+```
+
+This is surfaced by `meteor info extractor <extractor-name>` and in the Meteor documentation.
+
+## Available extractors
+
+<AccordionGroup>
+  <Accordion title="Databases">
+    | Name | Source |
+    |------|--------|
+    | `bigquery` | Google BigQuery |
+    | `bigtable` | Google Bigtable |
+    | `cassandra` | Apache Cassandra |
+    | `clickhouse` | ClickHouse |
+    | `couchdb` | CouchDB |
+    | `mariadb` | MariaDB |
+    | `mongodb` | MongoDB |
+    | `mssql` | Microsoft SQL Server |
+    | `mysql` | MySQL |
+    | `oracle` | Oracle Database |
+    | `postgres` | PostgreSQL |
+    | `presto` | Presto / Trino |
+    | `redshift` | Amazon Redshift |
+    | `snowflake` | Snowflake |
+  </Accordion>
+  <Accordion title="Messaging & streaming">
+    | Name | Source |
+    |------|--------|
+    | `kafka` | Apache Kafka |
+  </Accordion>
+  <Accordion title="Dashboards & BI">
+    | Name | Source |
+    |------|--------|
+    | `grafana` | Grafana |
+    | `metabase` | Metabase |
+    | `redash` | Redash |
+    | `superset` | Apache Superset |
+    | `tableau` | Tableau |
+  </Accordion>
+  <Accordion title="Object storage & files">
+    | Name | Source |
+    |------|--------|
+    | `csv` | CSV files |
+    | `gcs` | Google Cloud Storage |
+  </Accordion>
+  <Accordion title="Services & platforms">
+    | Name | Source |
+    |------|--------|
+    | `application_yaml` | YAML application config |
+    | `caramlstore` | CaraML Feature Store |
+    | `elastic` | Elasticsearch |
+    | `frontier` | Raystack Frontier |
+    | `github` | GitHub |
+    | `gsuite` | Google Workspace |
+    | `http` | Generic HTTP endpoint |
+    | `merlin` | Gojek Merlin |
+    | `optimus` | Optimus (job scheduler) |
+  </Accordion>
+</AccordionGroup>
+
+See the [extractors reference](/reference/extractors/databases) for configuration details for each extractor.
+
+## Using an extractor in a recipe
+
+```yaml
+source:
+  name: kafka          # extractor plugin name
+  scope: local-kafka   # URN namespace for generated asset IDs
+  config:
+    broker: "localhost:9092"
+```
+
+The `config` block is passed directly to the extractor's `Init` method as `RawConfig`. Required and optional config keys differ per extractor — refer to each extractor's reference page.
+
+## Retry behaviour
+
+The agent automatically retries a failed `Extract` call. Retry count and initial interval are configured at the agent level. Each retry attempt is logged and counted in the run metrics.
+
+```
+WARN retrying extractor in 2s  extractor=kafka  error=connection refused
+```

@@ -1,0 +1,181 @@
+---
+title: "Recipe"
+description: "The YAML file that defines a complete metadata extraction job: source, processors, and sinks."
+---
+
+A recipe is a YAML file that instructs Meteor on how to run a single metadata collection job. It identifies the extractor to use, any processors to apply, and the sinks to deliver results to.
+
+Every recipe must have exactly **one** `source` and at least **one** entry in `sinks`. The `processors` field is optional.
+
+## Minimal example
+
+```yaml recipe.yaml
+name: main-kafka-production
+version: v1beta1
+source:
+  name: kafka
+  scope: local-kafka
+  config:
+    broker: "localhost:9092"
+sinks:
+  - name: http
+    config:
+      method: POST
+      url: "https://example.com/metadata"
+```
+
+## Full example
+
+```yaml recipe.yaml
+name: main-kafka-production
+version: v1beta1
+source:
+  name: kafka
+  scope: local-kafka
+  config:
+    broker: "localhost:9092"
+sinks:
+  - name: http
+    config:
+      method: POST
+      url: "https://example.com/metadata"
+  - name: console
+processors:
+  - name: metadata
+    config:
+      foo: bar
+      bar: foo
+```
+
+## Recipe fields
+
+<ParamField path="name" type="string" required>
+  A unique identifier for this recipe. Used as the job ID in logs, metrics, and run reports. Must be unique across all recipes you intend to run together.
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  The recipe schema version. Use `v1beta1` for the current schema.
+</ParamField>
+
+<ParamField path="source" type="object" required>
+  Defines the extractor plugin to use and its configuration. Exactly one source is allowed per recipe.
+
+  <Expandable title="source fields">
+    <ParamField path="source.name" type="string" required>
+      The registered name of the extractor plugin (e.g. `kafka`, `bigquery`, `mongodb`). See the [extractors reference](/reference/extractors/databases) for the full list.
+    </ParamField>
+    <ParamField path="source.scope" type="string" required>
+      The URN namespace used to generate globally unique identifiers for extracted assets. Typically set to an environment or cluster name (e.g. `production`, `local-kafka`).
+    </ParamField>
+    <ParamField path="source.config" type="object">
+      Extractor-specific configuration. Required fields vary by extractor — refer to each extractor's documentation for details.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="sinks" type="object[]" required>
+  A list of sink plugins that will receive the extracted and processed metadata. At least one sink must be specified.
+
+  <Expandable title="sink entry fields">
+    <ParamField path="sinks[].name" type="string" required>
+      The registered name of the sink plugin (e.g. `http`, `kafka`, `gcs`, `console`). See the [sinks reference](/reference/sinks) for the full list.
+    </ParamField>
+    <ParamField path="sinks[].config" type="object">
+      Sink-specific configuration. Required fields vary by sink.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="processors" type="object[]">
+  An optional list of processor plugins applied to each record before it reaches the sinks. Processors execute in the order listed.
+
+  <Expandable title="processor entry fields">
+    <ParamField path="processors[].name" type="string" required>
+      The registered name of the processor plugin (e.g. `metadata`, `enrich`, `script`). See the [processors reference](/reference/processors) for the full list.
+    </ParamField>
+    <ParamField path="processors[].config" type="object">
+      Processor-specific configuration.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Dynamic values with environment variables
+
+Meteor renders recipes using Go's [`text/template`](https://pkg.go.dev/text/template) engine before parsing. This lets you inject secrets and environment-specific values without hardcoding them in recipe files.
+
+Any environment variable prefixed with `METEOR_` is automatically available as a template variable (without the prefix, lowercased):
+
+```yaml recipe-with-variables.yaml
+name: sample-recipe
+version: v1beta1
+source:
+  name: mongodb
+  config:
+    # wrap in double quotes so the value is read as a YAML string
+    connection_url: "{{ .connection_url }}"
+sinks:
+  - name: http
+    config:
+      method: POST
+      url: "https://example.com/metadata"
+```
+
+```bash
+export METEOR_CONNECTION_URL=mongodb://admin:pass123@localhost:27017
+meteor run recipe-with-variables.yaml
+```
+
+<Warning>
+Always wrap template expressions in double quotes when the substituted value should be treated as a YAML string. Without quotes, special characters in the value can break YAML parsing.
+</Warning>
+
+## Dynamic values with --var flag
+
+Instead of (or in addition to) environment variables, you can pass a YAML config file using `--var`. Variables in the config file do **not** require a `METEOR_` prefix.
+
+When the same key exists in both the environment and the `--var` file, the `--var` file takes precedence.
+
+```yaml sample-config.yaml
+SOURCE:
+  USERNAME: admin
+  PASSWORD: "1234"
+```
+
+```bash
+meteor run ./recipes/ --var sample-config.yaml
+```
+
+<Tip>
+Use a `--var` file for local development secrets and environment variables for CI/CD pipelines. This keeps sensitive values out of recipe files and source control.
+</Tip>
+
+## Running recipes
+
+<Tabs>
+  <Tab title="Single recipe">
+    ```bash
+    meteor run recipe.yaml
+    ```
+  </Tab>
+  <Tab title="Directory of recipes">
+    ```bash
+    meteor run ./recipes/
+    ```
+    All recipes in the directory are discovered and run concurrently.
+  </Tab>
+  <Tab title="With variables">
+    ```bash
+    meteor run ./recipes/ --var config.yaml
+    ```
+  </Tab>
+</Tabs>
+
+## Validating a recipe
+
+Before running, you can validate a recipe to check for configuration errors without executing any extraction:
+
+```bash
+meteor lint recipe.yaml
+```
+
+The linter calls `Validate` on each plugin (extractor, processors, sinks) and reports any missing or invalid config fields.

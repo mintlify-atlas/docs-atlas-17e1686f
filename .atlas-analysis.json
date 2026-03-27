@@ -1,23 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Meteor",
+  "projectType": "cli-tool",
+  "projectName": "Meteor",
+  "projectDescription": "A plugin-driven metadata collection framework that extracts metadata from diverse data sources and sinks it to any data catalog.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#6366f1",
-    "light": "#818cf8",
-    "dark": "#4338ca"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/raystack/meteor"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/raystack/meteor"
-    }
-  },
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4338ca",
   "navigation": {
     "tabs": [
       {
@@ -93,5 +81,29 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Plugin-driven architecture with 30+ extractors for databases, dashboards, messaging, cloud storage, and more",
+    "Flexible recipe system for defining metadata extraction jobs in YAML",
+    "Multiple sink plugins to deliver metadata to data catalogs and APIs",
+    "Metadata processors for enriching and transforming data before sinking",
+    "Single binary with no external dependencies, deployable in VMs or containers",
+    "Dynamic recipe values with environment variable templating",
+    "OpenTelemetry support for monitoring and observability",
+    "Retry logic with configurable backoff for resilient extraction runs"
+  ],
+  "publicApiSurface": [
+    "meteor run <recipe-path>",
+    "meteor new recipe <name> -e <extractor> -s <sink>",
+    "meteor gen recipe <name> -e <extractor> -s <sink>",
+    "meteor lint <recipe-path>",
+    "meteor list extractors|sinks|processors",
+    "meteor info <plugin-type> <plugin-name>",
+    "meteor version",
+    "plugins.Extractor interface (Extract, Init, Validate, Info)",
+    "plugins.Processor interface (Process, Init, Validate, Info)",
+    "plugins.Syncer interface (Sink, Close, Init, Validate, Info)",
+    "agent.NewAgent(config Config) *Agent",
+    "recipe.Recipe struct (Name, Version, Source, Sinks, Processors)"
+  ]
 }

@@ -1,0 +1,147 @@
+---
+title: "Running recipes"
+description: "Execute single recipes, batches, and directories. Pass variables, follow progress output, and understand run results."
+---
+
+Meteor runs recipes via the `meteor run` command. You can target a single recipe file, a directory of recipes, or the current working directory.
+
+## Recipe execution workflow
+
+<Steps>
+  <Step title="Write or generate a recipe">
+    Every run starts with a YAML recipe file that describes a source (extractor), optional processors, and one or more sinks. If you don't have a recipe yet, generate one:
+
+    ```bash
+    meteor new recipe my-recipe -n my-namespace -e bigquery -s console
+    ```
+
+    Redirect stdout to save it to disk:
+
+    ```bash
+    meteor new recipe my-recipe -n my-namespace -e bigquery -s console > my-recipe.yaml
+    ```
+  </Step>
+
+  <Step title="Validate the recipe">
+    Run the linter before executing to catch configuration errors early:
+
+    ```bash
+    meteor lint my-recipe.yaml
+    ```
+
+    Meteor reports each recipe with a pass/fail status and prints line-level error details for invalid plugin names or misconfigured fields.
+  </Step>
+
+  <Step title="Set any required variables">
+    Recipes can reference variables using Go template syntax (`{{ .var_name }}`). Supply values via a YAML vars file passed with `--var`:
+
+    ```bash
+    meteor run my-recipe.yaml --var ./vars.yaml
+    ```
+
+    You can also supply variables as environment variables prefixed with `METEOR_`. For example, `METEOR_HOST=localhost` becomes available as `{{ .host }}` inside the recipe. Values from `--var` take precedence over environment variables when a key appears in both.
+
+    <Tip>Use environment variables for secrets such as passwords and API keys so they never land in recipe files.</Tip>
+  </Step>
+
+  <Step title="Run the recipe">
+    Execute a single file, a named directory, or the current directory:
+
+    <CodeGroup>
+
+    ```bash Single file
+    meteor run recipe.yml
+    ```
+
+    ```bash Specific directory
+    meteor run _recipes/
+    ```
+
+    ```bash Current directory
+    meteor run .
+    ```
+
+    </CodeGroup>
+
+    To use a non-default agent config file, pass `-c`:
+
+    ```bash
+    meteor run recipe.yml -c /etc/meteor/meteor.yaml
+    ```
+  </Step>
+
+  <Step title="Read the progress output">
+    Meteor shows a real-time progress bar during execution:
+
+    ```
+    [cyan]running recipes [reset] 3 / 5
+    ```
+
+    When all recipes finish, a summary table is printed:
+
+    ```
+    All recipes ran successful
+    0 failing, 5 successful, and 5 total
+
+    Status  Recipe          Source     Duration(ms)  Records
+    ✓       my-bigquery     bigquery   1240          532
+    ✓       my-postgres     postgres   890           114
+    ```
+
+    If any recipe fails, Meteor exits with a non-zero code and the table highlights the failing rows:
+
+    ```
+    Some recipes were not successful
+    1 failing, 4 successful, and 5 total
+    ```
+
+    <Note>Meteor continues running remaining recipes even when one fails, so all results are collected before the process exits.</Note>
+  </Step>
+</Steps>
+
+## Running with Docker
+
+If you are using the official Docker image instead of the binary, prefix the command with `docker run`:
+
+<CodeGroup>
+
+```bash Single file
+docker run --rm raystack/meteor meteor run recipe.yml
+```
+
+```bash Specific directory
+docker run --rm raystack/meteor meteor run _recipes/
+```
+
+```bash Current directory
+docker run --rm raystack/meteor meteor run .
+```
+
+</CodeGroup>
+
+Mount a local directory so the container can read your recipe files and config:
+
+```bash
+docker run --rm \
+  -v $(pwd):/app \
+  -w /app \
+  raystack/meteor meteor run recipe.yml
+```
+
+## Flags reference
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--var` | | | Path to a YAML file containing variables for recipe templates |
+| `--config` | `-c` | `./meteor.yaml` | Path to the agent-level config file |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Managing recipes" icon="file-pen" href="/guides/managing-recipes">
+    Create, template, and lint recipes before running them.
+  </Card>
+  <Card title="Deployment" icon="server" href="/guides/deployment">
+    Configure Meteor for production use with environment variables and OpenTelemetry.
+  </Card>
+</CardGroup>

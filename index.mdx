@@ -1,97 +1,66 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Meteor"
+description: "A plugin-driven metadata collection framework that extracts metadata from diverse data sources and sinks it to any data catalog."
 ---
 
-## Setting up
+Meteor is a lightweight, plugin-driven agent for collecting metadata. It compiles into a single binary with no external dependencies, and connects to databases, dashboards, messaging systems, and cloud services to gather metadata and forward it to any data catalog or downstream system.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first metadata extraction in minutes with a simple recipe.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Install Meteor via Homebrew, binary download, or from source.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Concepts" icon="book" href="/concepts/overview">
+    Understand recipes, extractors, processors, and sinks.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CLI Reference" icon="terminal" href="/reference/commands">
+    Full reference for all Meteor commands and flags.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How Meteor works
 
-Everything you need to create world-class documentation.
+Meteor uses **recipes** — YAML files that define where to extract metadata from, how to process it, and where to send it. Each recipe specifies one source (extractor), optional processors, and one or more sinks.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Install Meteor">
+    Install the Meteor binary on your machine using Homebrew or download a release directly.
 
-## Need inspiration?
+    ```bash
+    brew install raystack/tap/meteor
+    ```
+  </Step>
+  <Step title="Create a recipe">
+    Generate a sample recipe for your data source using the `meteor new` command.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    ```bash
+    meteor new recipe my-recipe -e bigquery -s console
+    ```
+  </Step>
+  <Step title="Run the recipe">
+    Execute the recipe to extract and sink metadata.
+
+    ```bash
+    meteor run my-recipe.yaml
+    ```
+  </Step>
+</Steps>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="30+ extractors" icon="plug" href="/reference/extractors/databases">
+    Extract from databases, dashboards, message queues, cloud storage, and more.
+  </Card>
+  <Card title="Flexible sinks" icon="arrow-right-from-bracket" href="/reference/sinks">
+    Send metadata to Compass, Kafka, HTTP endpoints, GCS, and more.
+  </Card>
+  <Card title="Processors" icon="microchip" href="/reference/processors">
+    Enrich, label, and transform metadata before sending to sinks.
+  </Card>
+  <Card title="No dependencies" icon="cube" href="/installation">
+    Single binary, minimal footprint, runs in VMs or containers.
+  </Card>
+</CardGroup>

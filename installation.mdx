@@ -1,0 +1,182 @@
+---
+title: "Installation"
+description: "Install Meteor on macOS, Linux, or Windows using Homebrew, a pre-built binary, Docker, or by building from source."
+---
+
+Meteor is distributed as a single binary with no external runtime dependencies. Choose the installation method that works best for your environment.
+
+## Prerequisites
+
+All installation methods require no special dependencies except where noted:
+
+- **Homebrew**: macOS or Linux with [Homebrew](https://brew.sh) installed
+- **Binary**: Any 64-bit OS (macOS, Linux, Windows, FreeBSD, OpenBSD)
+- **Docker**: Docker installed and running
+- **Build from source**: Go 1.16 or above, and `git`
+
+## Install
+
+<Tabs>
+  <Tab title="Homebrew">
+    The recommended method for macOS and Linux.
+
+    ```bash
+    brew install raystack/tap/meteor
+    ```
+
+    To upgrade an existing installation:
+
+    ```bash
+    brew upgrade meteor
+    ```
+  </Tab>
+
+  <Tab title="Binary">
+    Download a pre-built binary from the [GitHub releases page](https://github.com/raystack/meteor/releases).
+
+    1. Download the archive for your platform.
+    2. Extract the binary.
+    3. Move it to a directory on your `PATH`, for example `/usr/local/bin`:
+
+    ```bash
+    # Example for Linux amd64
+    tar -xzf meteor_linux_amd64.tar.gz
+    mv meteor /usr/local/bin/meteor
+    ```
+
+    No installer is provided. You are responsible for placing the binary in a location that is on your `$PATH`.
+  </Tab>
+
+  <Tab title="Docker">
+    Pull the official image from Docker Hub:
+
+    ```bash
+    docker pull raystack/meteor
+    ```
+
+    Run Meteor commands using the container:
+
+    ```bash
+    # Print help
+    docker run --rm raystack/meteor
+
+    # List available extractors
+    docker run --rm raystack/meteor meteor list extractors
+
+    # Run a recipe (mount the recipe file into the container)
+    docker run --rm -v $(pwd):/recipes raystack/meteor meteor run /recipes/recipe.yaml
+    ```
+  </Tab>
+
+  <Tab title="Build from source">
+    Requires Go 1.16 or above and `git`.
+
+    ```bash
+    git clone https://github.com/raystack/meteor.git
+    cd meteor
+    make build
+    ```
+
+    This produces a `meteor` binary in the current directory. Move it to your `PATH`:
+
+    ```bash
+    mv meteor /usr/local/bin/meteor
+    ```
+  </Tab>
+</Tabs>
+
+## Verify the installation
+
+After installing, confirm that Meteor is on your `PATH` and working:
+
+```bash
+meteor version
+```
+
+You should see the installed version number printed to the terminal.
+
+## All installation methods at a glance
+
+<CodeGroup>
+
+```bash Homebrew
+# Install
+brew install raystack/tap/meteor
+
+# Upgrade
+brew upgrade meteor
+```
+
+```bash Binary
+# Download the release for your platform from:
+# https://github.com/raystack/meteor/releases
+
+# Then move the binary into your PATH:
+mv meteor /usr/local/bin/meteor
+```
+
+```bash Docker
+# Pull the image
+docker pull raystack/meteor
+
+# Run a recipe
+docker run --rm -v $(pwd):/recipes raystack/meteor meteor run /recipes/recipe.yaml
+```
+
+```bash Build from source
+git clone https://github.com/raystack/meteor.git
+cd meteor
+make build
+mv meteor /usr/local/bin/meteor
+```
+
+</CodeGroup>
+
+## Configuration
+
+Meteor looks for a `meteor.yaml` file in the current directory when you run `meteor run`. You can specify a different path with the `--config` flag:
+
+```bash
+meteor run recipe.yaml --config /etc/meteor/meteor.yaml
+```
+
+A sample configuration file with all available options:
+
+```yaml
+APP_NAME: meteor
+LOG_LEVEL: info
+MAX_RETRIES: 5
+RETRY_INITIAL_INTERVAL_SECONDS: 5
+STOP_ON_SINK_ERROR: false
+OTEL_ENABLED: false
+OTEL_COLLECTOR_ADDR: "localhost:4317"
+OTEL_TRACE_SAMPLE_PROBABILITY: 1
+SINK_BATCH_SIZE: 1
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `APP_NAME` | `meteor` | Application name used in logs and telemetry. |
+| `LOG_LEVEL` | `info` | Log verbosity. Accepts `debug`, `info`, `warn`, `error`. |
+| `MAX_RETRIES` | `5` | Number of retry attempts on transient failures. |
+| `RETRY_INITIAL_INTERVAL_SECONDS` | `5` | Initial backoff interval in seconds before the first retry. |
+| `STOP_ON_SINK_ERROR` | `false` | When `true`, a sink error stops the entire recipe run. |
+| `OTEL_ENABLED` | `false` | Enable OpenTelemetry metrics and tracing. |
+| `OTEL_COLLECTOR_ADDR` | `localhost:4317` | Address of the OTLP collector endpoint. |
+| `OTEL_TRACE_SAMPLE_PROBABILITY` | `1` | Trace sampling rate, between `0` and `1`. |
+| `SINK_BATCH_SIZE` | `1` | Number of records per sink write call. The sample config ships with `10` as a suggested starting value. |
+
+<Tip>
+  For a full reference of configuration options, see the [Configuration](/reference/configuration) page.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first metadata extraction end to end.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/reference/commands">
+    Browse all available commands and flags.
+  </Card>
+</CardGroup>

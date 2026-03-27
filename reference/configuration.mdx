@@ -1,0 +1,100 @@
+---
+title: "Configuration"
+description: "Reference for all agent-level configuration options in meteor.yaml, including logging, retries, error handling, and OpenTelemetry settings."
+---
+
+Meteor reads its agent-level configuration from a YAML file. By default the file is looked up at `./meteor.yaml` in the working directory. Pass a different path with the `--config` flag on the `run` command.
+
+All keys can also be set as environment variables using the same name (e.g. `LOG_LEVEL=debug meteor run recipe.yaml`). Environment variables take precedence over values in the file.
+
+<CodeGroup>
+
+```yaml meteor.yaml
+APP_NAME: meteor
+LOG_LEVEL: info
+MAX_RETRIES: 5
+RETRY_INITIAL_INTERVAL_SECONDS: 5
+STOP_ON_SINK_ERROR: false
+SINK_BATCH_SIZE: 1
+
+OTEL_ENABLED: false
+OTEL_COLLECTOR_ADDR: "localhost:4317"
+OTEL_TRACE_SAMPLE_PROBABILITY: 1
+```
+
+```yaml meteor.yaml (with OpenTelemetry)
+APP_NAME: my-pipeline
+LOG_LEVEL: warn
+MAX_RETRIES: 3
+RETRY_INITIAL_INTERVAL_SECONDS: 10
+STOP_ON_SINK_ERROR: true
+SINK_BATCH_SIZE: 50
+
+OTEL_ENABLED: true
+OTEL_COLLECTOR_ADDR: "otel-collector.internal:4317"
+OTEL_TRACE_SAMPLE_PROBABILITY: 0.1
+```
+
+</CodeGroup>
+
+## General
+
+<ParamField path="APP_NAME" type="string" default="meteor">
+  Name used to identify this Meteor instance in logs and trace data.
+</ParamField>
+
+<ParamField path="LOG_LEVEL" type="string" default="info">
+  Minimum log level. Accepted values in increasing verbosity: `error`, `warn`, `info`, `debug`.
+</ParamField>
+
+## Retry behaviour
+
+Meteor retries failed extractions and sink writes automatically. These settings control the retry policy.
+
+<ParamField path="MAX_RETRIES" type="number" default="5">
+  Maximum number of retry attempts for a failed plugin operation before the recipe is marked as failed.
+</ParamField>
+
+<ParamField path="RETRY_INITIAL_INTERVAL_SECONDS" type="number" default="5">
+  Number of seconds to wait before the first retry. Subsequent retries use exponential back-off based on this value.
+</ParamField>
+
+## Error handling
+
+<ParamField path="STOP_ON_SINK_ERROR" type="boolean" default="false">
+  When `true`, a sink error stops the entire recipe immediately. When `false` (the default), Meteor logs the error and continues processing the remaining records.
+</ParamField>
+
+## Sink batching
+
+<ParamField path="SINK_BATCH_SIZE" type="number" default="1">
+  Number of records sent to sinks in a single batch. Increase this value to reduce the number of network round-trips when writing to remote sinks.
+</ParamField>
+
+## OpenTelemetry
+
+Meteor can export traces to an OpenTelemetry collector over gRPC. Tracing is disabled by default.
+
+<ParamField path="OTEL_ENABLED" type="boolean" default="false">
+  Set to `true` to enable OpenTelemetry trace export.
+</ParamField>
+
+<ParamField path="OTEL_COLLECTOR_ADDR" type="string" default="localhost:4317">
+  gRPC address of the OpenTelemetry collector. Only used when `OTEL_ENABLED` is `true`.
+</ParamField>
+
+<ParamField path="OTEL_TRACE_SAMPLE_PROBABILITY" type="number" default="1">
+  Fraction of traces to sample, between `0` and `1`. `1` samples every trace; `0` disables sampling. Reduce this in high-throughput environments to limit collector load.
+</ParamField>
+
+## Environment variable precedence
+
+Configuration values are resolved in this order, from highest to lowest priority:
+
+1. Environment variables (e.g. `export LOG_LEVEL=debug`)
+2. Values in the `meteor.yaml` file
+3. Compiled-in defaults
+
+<Note>
+  If `meteor.yaml` is not found at the specified path, Meteor prints a notice and continues with default values. It does **not** exit with an error.
+</Note>

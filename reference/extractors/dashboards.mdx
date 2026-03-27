@@ -1,0 +1,301 @@
+---
+title: Dashboard Extractors
+description: Reference for all dashboard extractors supported by Meteor, including Grafana, Metabase, Superset, Tableau, and Redash.
+---
+
+Dashboard extractors collect metadata from BI and visualization platforms. Each extractor produces dashboard assets that include URLs, embedded chart definitions, and (where the API supports it) data-source lineage.
+
+## Feature matrix
+
+| Extractor | URL | Charts | Lineage | Tags |
+| :-------- | :-- | :----- | :------ | :--- |
+| `grafana` | ✅ | ✅ | ✗ | ✗ |
+| `metabase` | ✅ | ✅ | ✗ | ✗ |
+| `superset` | ✅ | ✅ | ✅ | ✗ |
+| `tableau` | ✅ | ✅ | ✅ | ✗ |
+| `redash` | ✅ | ✗ | ✗ | ✗ |
+
+<AccordionGroup>
+
+<Accordion title="grafana" icon="chart-bar">
+
+Extracts dashboard and panel (chart) metadata from a Grafana instance via its HTTP API.
+
+**Prerequisites**
+
+- A Grafana API key with the `Viewer` role.
+- Network access to the Grafana server from the host running Meteor.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: grafana
+  config:
+    base_url: http://grafana.example.com:3000
+    api_key: eyJrIjoiT0tTcG1pUlY2RnVKZTFVaDFsNFZXdE9ZWmNrMkZYbk
+    exclude:
+      dashboards:
+        - dashboard_uid_1
+        - dashboard_uid_2
+      panels:
+        - dashboard_uid_3.panel_id_1
+```
+
+**Config fields**
+
+<ParamField body="base_url" type="string" required>
+  Base URL of the Grafana server, including protocol and port (e.g. `http://localhost:3000`).
+</ParamField>
+
+<ParamField body="api_key" type="string" required>
+  Grafana API key used for authentication. The key needs at least the `Viewer` role.
+</ParamField>
+
+<ParamField body="exclude.dashboards" type="string[]">
+  List of dashboard UIDs to skip.
+</ParamField>
+
+<ParamField body="exclude.panels" type="string[]">
+  List of panel identifiers to skip, in `dashboard_uid.panel_id` format.
+</ParamField>
+
+**Output**
+
+Each Grafana dashboard is emitted as a `Dashboard` asset. Panels within the dashboard are emitted as `Chart` assets linked back to the parent dashboard.
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `grafana.HzK8qNW7z` |
+| `resource.name` | `new-dashboard-copy` |
+| `resource.service` | `grafana` |
+| `resource.url` | `http://localhost:3000/d/HzK8qNW7z/new-dashboard-copy` |
+| `charts[].urn` | `5WsKOvW7z.4` |
+| `charts[].type` | `table` |
+| `charts[].data_source` | `postgres` |
+| `charts[].raw_query` | `SELECT urn, created_at FROM resources ORDER BY 1` |
+
+</Accordion>
+
+<Accordion title="metabase" icon="chart-bar">
+
+Extracts dashboard and question (card) metadata from a Metabase instance.
+
+**Prerequisites**
+
+- Metabase credentials (username/password) or an active session ID.
+- The Metabase user must have at least read access to the dashboards you want to crawl.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: metabase
+  config:
+    host: http://localhost:3000
+    instance_label: my-metabase
+    username: meteor_tester
+    password: meteor_pass_1234
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  URL of the Metabase server, including protocol and port (e.g. `http://localhost:3000`).
+</ParamField>
+
+<ParamField body="instance_label" type="string" required>
+  Human-readable alias for this Metabase instance. Used as part of the generated URN.
+</ParamField>
+
+<ParamField body="username" type="string">
+  Metabase login email. Required unless `session_id` is provided.
+</ParamField>
+
+<ParamField body="password" type="string">
+  Metabase login password. Required alongside `username`.
+</ParamField>
+
+<ParamField body="session_id" type="string">
+  Existing Metabase session ID. When set, `username` and `password` are ignored.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `metabase::my-metabase/dashboard/5123` |
+| `resource.name` | `dashboard_name` |
+| `resource.service` | `metabase` |
+| `charts[].urn` | `metabase::my-metabase/card/9123` |
+| `charts[].dashboard_urn` | `metabase::my-metabase/dashboard/5123` |
+
+</Accordion>
+
+<Accordion title="superset" icon="chart-bar">
+
+Extracts dashboard and chart metadata from an Apache Superset instance, including chart-to-dataset lineage.
+
+**Prerequisites**
+
+- A Superset account with at least `can read on Dashboard` and `can read on Chart` permissions.
+- The authentication provider must be specified (`db` for database-backed auth, `ldap` for LDAP, etc.).
+
+**Sample recipe**
+
+```yaml
+source:
+  name: superset
+  config:
+    username: meteor_tester
+    password: meteor_pass_1234
+    host: http://localhost:8088
+    provider: db
+```
+
+**Config fields**
+
+<ParamField body="username" type="string" required>
+  Superset username.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Superset password.
+</ParamField>
+
+<ParamField body="host" type="string" required>
+  URL of the Superset server, including protocol and port (e.g. `http://localhost:8088`).
+</ParamField>
+
+<ParamField body="provider" type="string" required>
+  Superset authentication provider. Common values are `db` (database) and `ldap`.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `superset.dashboard_name` |
+| `resource.name` | `dashboard_name` |
+| `resource.service` | `superset` |
+| `resource.url` | `http://superset.example.com/dashboard/42` |
+| `charts[].name` | `chart_name` |
+| `charts[].datasource` | `chart_datasource` |
+| `charts[].dashboard_urn` | `dashboard:42` |
+
+</Accordion>
+
+<Accordion title="tableau" icon="chart-bar">
+
+Extracts workbook and sheet (chart) metadata from Tableau Server or Tableau Online using the Tableau REST API and Metadata API.
+
+**Prerequisites**
+
+- The [Tableau Metadata API](https://help.tableau.com/current/api/metadata_api/en-us/) must be enabled on the server.
+- Authenticate with username/password or a personal access token (`auth_token` + `site_id`).
+
+**Sample recipe**
+
+```yaml
+source:
+  name: tableau
+  config:
+    host: https://server.tableau.com
+    version: "3.12"
+    identifier: my-tableau
+    username: meteor_user
+    password: xxxxxxxxxx
+    sitename: testdev550928
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Tableau Server or Tableau Online URL (e.g. `https://server.tableau.com`).
+</ParamField>
+
+<ParamField body="version" type="string" required>
+  Tableau REST API version to use (e.g. `3.12`). See the [API version compatibility matrix](https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_concepts_versions.htm).
+</ParamField>
+
+<ParamField body="identifier" type="string" required>
+  Human-readable alias for this Tableau instance. Used as part of the generated URN.
+</ParamField>
+
+<ParamField body="username" type="string">
+  Tableau login username or email. Required when `auth_token` is not provided.
+</ParamField>
+
+<ParamField body="password" type="string">
+  Tableau login password. Required alongside `username`.
+</ParamField>
+
+<ParamField body="sitename" type="string">
+  Tableau site name. Leave empty to connect to the default site.
+</ParamField>
+
+<ParamField body="auth_token" type="string">
+  Personal access token for token-based authentication. Requires `site_id` when set.
+</ParamField>
+
+<ParamField body="site_id" type="string">
+  Tableau site ID. Required when `auth_token` is provided.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `tableau::my-tableau/workbook/abc123` |
+| `resource.name` | `Sales Overview` |
+| `resource.service` | `tableau` |
+| `resource.description` | `A description of the workbook` |
+| `charts[].urn` | `tableau::my-tableau/sheet/def456` |
+| `charts[].dashboard_urn` | `tableau::my-tableau/workbook/abc123` |
+
+</Accordion>
+
+<Accordion title="redash" icon="chart-bar">
+
+Extracts dashboard metadata from a Redash instance. Chart-level detail is not available because Redash does not expose a public API for individual visualization metadata.
+
+**Prerequisites**
+
+- A Redash API key. You can find your key under your Redash profile settings.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: redash
+  config:
+    base_url: https://redash.example.com
+    api_key: t33I8i8OFnVt3t9Bjj2RXr8nCBz0xyzVZ318Zwbj
+```
+
+**Config fields**
+
+<ParamField body="base_url" type="string" required>
+  Base URL of your Redash instance (e.g. `https://redash.example.com`). All API calls are appended to this URL.
+</ParamField>
+
+<ParamField body="api_key" type="string" required>
+  Redash API key used to authenticate all requests.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `redash.my_dashboard` |
+| `resource.name` | `my-dashboard-slug` |
+| `resource.service` | `redash` |
+| `resource.type` | `dashboard` |
+| `resource.url` | `https://redash.example.com/my-dashboard-slug` |
+| `resource.description` | `ID: 12, version: 3` |
+
+<Note>Redash does not expose a public API for chart-level detail within a dashboard. The `charts` field is not populated by this extractor.</Note>
+
+</Accordion>
+
+</AccordionGroup>

@@ -1,0 +1,266 @@
+---
+title: Processors
+description: Reference for all processor plugins in Meteor. Processors transform asset records between extraction and sinking.
+---
+
+Processors sit between extractors and sinks in a Meteor recipe pipeline. Each processor receives an asset record, optionally transforms it, and passes the result to the next stage.
+
+## Processor pipeline
+
+Processors are declared as an ordered list under the `processors` key in a recipe. They execute sequentially — the output of one processor becomes the input of the next.
+
+```yaml
+name: my-recipe
+version: v1beta1
+source:
+  name: bigquery
+  scope: production
+  config:
+    project_id: my-project
+processors:
+  - name: labels          # 1. attach labels first
+    config:
+      labels:
+        env: production
+  - name: enrich          # 2. then add attributes
+    config:
+      attributes:
+        team: data-platform
+  - name: script          # 3. finally, run arbitrary transforms
+    config:
+      engine: tengo
+      script: |
+        asset.owners = append(asset.owners || [], { name: "Data Team", email: "data@example.com" })
+sinks:
+  - name: compass
+    config:
+      host: https://compass.example.com
+```
+
+<Note>
+All processors in the list run for every asset emitted by the extractor. If a processor returns an error for a given record, that record is not passed to subsequent processors or sinks.
+</Note>
+
+## Available processors
+
+<AccordionGroup>
+
+<Accordion title="enrich" icon="sparkles">
+
+## enrich
+
+The `enrich` processor appends key-value pairs to the asset's custom attributes (`asset.attributes`). Use it to attach metadata that the extractor does not produce — for example, a team name, cost center, or environment tag — without writing a script.
+
+Only string values are written to attributes. Non-string values in the config are ignored.
+
+**Sample recipe**
+
+```yaml
+processors:
+  - name: enrich
+    config:
+      attributes:
+        team: data-platform
+        environment: production
+        cost_center: eng-infra
+```
+
+**Config fields**
+
+<ParamField body="attributes" type="object" required>
+  A map of string keys to string values. Each entry is written into the asset's custom attributes. Existing attribute values are overwritten if the key already exists.
+
+  ```yaml
+  attributes:
+    fieldA: valueA
+    fieldB: valueB
+  ```
+</ParamField>
+
+<Tip>
+The `enrich` processor is the right choice for static, uniform metadata — values that are the same for every asset produced by a given recipe run. For dynamic or conditional enrichment, use the `script` processor instead.
+</Tip>
+
+</Accordion>
+
+<Accordion title="labels" icon="tag">
+
+## labels
+
+The `labels` processor appends key-value pairs to the asset's `labels` map. Labels are a first-class field on every Meteor asset and are surfaced directly in downstream systems such as Compass.
+
+Existing labels are preserved; the processor merges the configured labels on top of whatever labels the asset already carries. If the same key is present in both, the configured value wins.
+
+**Sample recipe**
+
+```yaml
+processors:
+  - name: labels
+    config:
+      labels:
+        environment: production
+        managed-by: meteor
+        team: data-platform
+```
+
+**Config fields**
+
+<ParamField body="labels" type="object" required>
+  A map of string keys to string values to merge into the asset's labels.
+
+  ```yaml
+  labels:
+    key1: value1
+    key2: value2
+  ```
+</ParamField>
+
+<Note>
+The difference between `labels` and `enrich`: **labels** writes to `asset.labels`, which is a standard top-level field visible in Compass and other sinks. **enrich** writes to `asset.attributes`, which is a custom property bag. Use `labels` when you need the values to be queryable or filterable in Compass.
+</Note>
+
+</Accordion>
+
+<Accordion title="script" icon="code">
+
+## script
+
+The `script` processor runs a user-defined [Tengo](https://github.com/d5/tengo) script against each asset record. Use it for transformations that `enrich` and `labels` cannot express — conditional logic, string manipulation, restructuring nested fields, modifying lineage, or computing derived values.
+
+The [Tengo standard library](https://github.com/d5/tengo/blob/v2.13.0/docs/stdlib.md) is available for import inside scripts, with the exception of the `os` module.
+
+The script is compiled once at processor initialization time, then cloned and executed once per asset record.
+
+**Sample recipe — simple owner injection**
+
+```yaml
+processors:
+  - name: script
+    config:
+      engine: tengo
+      script: |
+        asset.owners = append(asset.owners || [], {
+          name: "Data Platform Team",
+          email: "data-platform@example.com"
+        })
+```
+
+**Sample recipe — conditional label and lineage transform**
+
+```yaml
+processors:
+  - name: script
+    config:
+      engine: tengo
+      script: |
+        text := import("text")
+
+        // merge a label into existing labels
+        merge := func(m1, m2) {
+          for k, v in m2 { m1[k] = v }
+          return m1
+        }
+        asset.labels = merge({script_engine: "tengo"}, asset.labels)
+
+        // strip domain suffix from kafka upstream URNs
+        for u in asset.lineage.upstreams {
+          if u.service == "kafka" {
+            u.urn = text.replace(u.urn, ".internal.example.com", "", -1)
+          }
+        }
+```
+
+**Config fields**
+
+<ParamField body="engine" type="string" required>
+  Script engine to use. Only `tengo` is supported.
+</ParamField>
+
+<ParamField body="script" type="string" required>
+  Tengo script source code. The script has access to the following globals:
+
+  - **`asset`** — The asset record as a mutable map. Field names match the [`Asset` proto definition](https://github.com/raystack/proton/blob/main/raystack/assets/v1beta2/asset.proto). Mutations to `asset` are reflected in the record passed to subsequent stages.
+  - `asset.data` — The asset-type-specific payload (e.g. `Table`, `Topic`, `Dashboard`). Its structure depends on the extractor.
+
+  Any changes made to `asset` inside the script are automatically applied to the output record. You do not need to return anything; the modified `asset` variable is read back after script execution.
+</ParamField>
+
+**Script globals reference**
+
+| Variable | Type | Description |
+| --- | --- | --- |
+| `asset` | map | The full asset record. Mutate fields directly. |
+| `asset.urn` | string | Unique resource name |
+| `asset.name` | string | Human-readable name |
+| `asset.service` | string | Source service (e.g. `bigquery`, `kafka`) |
+| `asset.type` | string | Asset type (e.g. `table`, `topic`, `dashboard`) |
+| `asset.description` | string | Asset description |
+| `asset.labels` | map | Key-value label map |
+| `asset.owners` | array | List of owner objects (`name`, `email`, `role`, `urn`) |
+| `asset.lineage` | map | Lineage with `upstreams` and `downstreams` arrays |
+| `asset.data` | map | Type-specific payload |
+
+**Supported `asset.data` types**
+
+The structure of `asset.data` depends on which extractor produced the record:
+
+`Bucket`, `Dashboard`, `Experiment`, `FeatureTable`, `Group`, `Job`, `Metric`, `Model`, `Application`, `Table`, `Topic`, `User`
+
+<Warning>
+The Tengo `os` standard library module is blocked and cannot be imported inside scripts.
+</Warning>
+
+<Tip>
+The Tengo `times` and `text` modules are particularly useful for timestamp arithmetic and string manipulation on URNs, names, and descriptions. Import them with `times := import("times")` and `text := import("text")`.
+</Tip>
+
+**Worked example**
+
+Given a `FeatureTable` asset, the following script adds a label, enriches entity and feature metadata, injects an owner, and adjusts a lineage URN:
+
+```go
+text := import("text")
+times := import("times")
+
+merge := func(m1, m2) {
+    for k, v in m2 {
+        m1[k] = v
+    }
+    return m1
+}
+
+// add a label
+asset.labels = merge({script_engine: "tengo"}, asset.labels)
+
+// label each entity
+for e in asset.data.entities {
+    e.labels = merge({catch_phrase: "You talkin' to me?"}, e.labels)
+}
+
+// assign entity_name to each feature
+for f in asset.data.features {
+    if f.name == "ongoing_placed_and_waiting_acceptance_orders" || f.name == "ongoing_orders" {
+        f.entity_name = "customer_orders"
+    } else if f.name == "merchant_avg_dispatch_arrival_time_10m" {
+        f.entity_name = "merchant_driver"
+    } else if f.name == "ongoing_accepted_orders" {
+        f.entity_name = "merchant_orders"
+    }
+}
+
+// inject an owner
+asset.owners = append(asset.owners || [], { name: "Big Mom", email: "big.mom@wholecakeisland.com" })
+
+// strip domain suffix from kafka upstream URNs
+for u in asset.lineage.upstreams {
+    u.urn = u.service != "kafka" ? u.urn : text.replace(u.urn, ".yonkou.io", "", -1)
+}
+
+// add one day to update_time
+update_time := times.parse("2006-01-02T15:04:05Z07:00", asset.data.update_time)
+asset.data.update_time = times.add_date(update_time, 0, 0, 1)
+```
+
+</Accordion>
+
+</AccordionGroup>

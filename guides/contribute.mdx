@@ -1,0 +1,246 @@
+---
+title: "Contributing"
+description: "Set up a local development environment, add new plugins, run tests, and submit a pull request to Meteor."
+---
+
+Meteor welcomes contributions of all kinds — bug fixes, new extractors, processors, sinks, documentation improvements, and more. This guide covers everything you need to get from a fresh clone to an open pull request.
+
+## Ways to contribute
+
+<CardGroup cols={2}>
+  <Card title="Report a bug or suggest a feature" icon="bug">
+    Open a GitHub issue or start a discussion. Describe what you expected and what actually happened.
+  </Card>
+  <Card title="Add a new extractor" icon="database">
+    Connect Meteor to a new data source by implementing the extractor interface.
+  </Card>
+  <Card title="Add a new processor" icon="gear">
+    Enrich or transform extracted metadata before it reaches a sink.
+  </Card>
+  <Card title="Add a new sink" icon="arrow-right-to-bracket">
+    Deliver metadata to a new destination such as a catalog or message queue.
+  </Card>
+  <Card title="Improve documentation" icon="book">
+    Docs live alongside the code in the `docs/` directory. Update them in the same PR as any code change.
+  </Card>
+  <Card title="Update dependencies" icon="arrow-up-right-dots">
+    Keep libraries current and replace deprecated tools.
+  </Card>
+</CardGroup>
+
+## Development setup
+
+<Steps>
+  <Step title="Fork and clone the repository">
+    ```bash
+    git clone https://github.com/<your-fork>/meteor.git
+    cd meteor
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Meteor is a standard Go module. Fetch all dependencies:
+
+    ```bash
+    go mod download
+    ```
+
+    Install the mock generation tool used by the project:
+
+    ```bash
+    make install
+    ```
+
+    This runs:
+
+    ```bash
+    go install github.com/vektra/mockery/v2@v2.14.0
+    ```
+  </Step>
+
+  <Step title="Copy the sample config">
+    ```bash
+    make copy-config
+    ```
+
+    This copies `config/meteor.yaml.sample` to `./meteor.yaml`. Edit the file to match your local environment.
+  </Step>
+
+  <Step title="Build the binary">
+    <Tabs>
+      <Tab title="Release build">
+        ```bash
+        make build
+        ```
+
+        Equivalent to:
+
+        ```bash
+        go build -ldflags "-X github.com/raystack/meteor/cmd.Version=$(git describe --always --tags)" github.com/raystack/meteor
+        ```
+      </Tab>
+      <Tab title="Dev build">
+        ```bash
+        make build-dev
+        ```
+
+        Equivalent to:
+
+        ```bash
+        CGO_ENABLED=0 go build -ldflags "-X github.com/raystack/meteor/cmd.Version=dev" github.com/raystack/meteor
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Run the tests">
+    Verify your environment is working before making changes:
+
+    ```bash
+    make test
+    ```
+  </Step>
+</Steps>
+
+## Makefile targets
+
+| Target | Description |
+|--------|-------------|
+| `make build` | Build the binary with the current git tag as the version |
+| `make build-dev` | Build a dev binary with CGO disabled and version set to `dev` |
+| `make clean` | Remove the `dist/` directory |
+| `make copy-config` | Copy `config/meteor.yaml.sample` to `./meteor.yaml` |
+| `make test` | Run unit tests (excludes plugins, mocks, and generated code) |
+| `make test-e2e` | Run end-to-end integration tests with the `integration` build tag |
+| `make test-plugins` | Run plugin tests; set `PLUGIN=extractors/bigquery` to target one plugin |
+| `make test-coverage` | Merge coverage profiles and open the HTML report |
+| `make lint` | Run `golangci-lint` against the codebase |
+| `make install` | Install `mockery` for mock generation |
+| `make generate-proto` | Regenerate protobuf bindings from raystack/proton |
+
+## Adding a new extractor
+
+Follow these steps to add support for a new data source:
+
+<Steps>
+  <Step title="Create the extractor package">
+    Add a new directory under `plugins/extractors/<name>/` and implement the extractor interface. Write a unit test alongside it.
+  </Step>
+
+  <Step title="Register the extractor">
+    Add your extractor to `plugins/extractors/populate.go`. This is also where you inject any external dependencies (clients, loggers, etc.).
+  </Step>
+
+  <Step title="Add a README">
+    Create a `README.md` in your extractor's directory describing its configuration fields, required permissions, and a sample recipe snippet. Follow the existing extractor READMEs as a template.
+  </Step>
+
+  <Step title="Update the reference docs">
+    Add your extractor to the appropriate list in `docs/reference/extractors.md`.
+  </Step>
+</Steps>
+
+## Adding a new processor
+
+<Steps>
+  <Step title="Create the processor package">
+    Add a new directory under `plugins/processors/<name>/` and implement the processor interface. Write a unit test.
+
+    If your processor requires a running service to test (for example, an external API), use Meteor's Docker container utility to spin one up in the test. See `plugins/extractors/mysql/extractor_test.go` for a reference.
+  </Step>
+
+  <Step title="Register the processor">
+    Add your processor to `plugins/processors/populate.go`.
+  </Step>
+
+  <Step title="Update the reference docs">
+    Add usage documentation for your processor to `docs/reference/processors.md`.
+  </Step>
+</Steps>
+
+## Adding a new sink
+
+<Steps>
+  <Step title="Create the sink package">
+    Add a new directory under `plugins/sinks/<name>/` and implement the sink interface. Write a unit test.
+
+    Use the Docker container utility for integration tests that require a running service. See `plugins/extractors/mysql/extractor_test.go` for the pattern.
+  </Step>
+
+  <Step title="Register the sink">
+    Add your sink to `plugins/sinks/populate.go`.
+  </Step>
+
+  <Step title="Update the reference docs">
+    Add usage documentation for your sink to `docs/reference/sinks.md`.
+  </Step>
+</Steps>
+
+## Running tests
+
+<CodeGroup>
+
+```bash Unit tests
+make test
+```
+
+```bash Plugin tests (all)
+make test-plugins
+```
+
+```bash Plugin tests (single)
+make test-plugins PLUGIN=extractors/bigquery
+```
+
+```bash End-to-end tests
+make test-e2e
+```
+
+```bash Coverage report
+make test-coverage
+```
+
+</CodeGroup>
+
+<Note>
+All contributions must include appropriate tests. PRs without test coverage for new or changed behaviour will not be merged.
+</Note>
+
+## Contribution guidelines
+
+- Keep your local build green (`make test` and `make lint` passing) before opening a PR.
+- If you are introducing a major new feature or changing a public interface, open an issue first to discuss the design.
+- If your change affects user-facing configuration or CLI behaviour, include a documentation update in the same PR.
+- PRs that add a new extractor, processor, or sink must also include the corresponding reference doc update.
+
+## Submitting a pull request
+
+<Steps>
+  <Step title="Create a branch">
+    ```bash
+    git checkout -b feat/my-new-extractor
+    ```
+  </Step>
+
+  <Step title="Make your changes and run all checks">
+    ```bash
+    make test && make lint
+    ```
+  </Step>
+
+  <Step title="Commit and push">
+    ```bash
+    git add .
+    git commit -m "feat(extractors): add <name> extractor"
+    git push origin feat/my-new-extractor
+    ```
+  </Step>
+
+  <Step title="Open the PR">
+    Open a pull request against the `main` branch on [github.com/raystack/meteor](https://github.com/raystack/meteor). Describe what the change does and reference any related issues.
+  </Step>
+</Steps>
+
+<Tip>
+Candidates for committer status are identified from active contributors. If you want to become a committer, the best path is a consistent track record of quality contributions.
+</Tip>

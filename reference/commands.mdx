@@ -1,0 +1,307 @@
+---
+title: "CLI commands"
+description: "Complete reference for all Meteor CLI commands, flags, and usage examples."
+---
+
+Meteor is invoked as `meteor <command> [subcommand] [flags]`. Every command supports `--help` for inline documentation.
+
+```bash
+meteor --help
+meteor <command> --help
+```
+
+<AccordionGroup>
+
+  <Accordion title="run" icon="play">
+
+    ## run
+
+    Execute one or more recipes for metadata extraction.
+
+    ```
+    meteor run <path>|<name> [flags]
+    ```
+
+    A recipe is a YAML file that describes how metadata is collected — which extractor to use, optional processors, and where to send the results. Pass a single recipe file or a directory to run all recipes inside it.
+
+    **Flags**
+
+    <ParamField path="--config" type="string" default="./meteor.yaml">
+      Path to the agent-level config file. Short form: `-c`.
+    </ParamField>
+
+    <ParamField path="--var" type="string">
+      Path to a config file that supplies environment variable values referenced inside recipe files.
+    </ParamField>
+
+    **Examples**
+
+    ```bash
+    # run a single recipe
+    meteor run recipe.yaml
+
+    # run all recipes in a directory
+    meteor run _recipes/
+
+    # run all recipes in the current directory
+    meteor run .
+
+    # use a custom agent config file
+    meteor run recipe.yaml --config /etc/meteor/meteor.yaml
+
+    # supply variables for recipe interpolation
+    meteor run recipe.yaml --var vars.yaml
+    ```
+
+    After execution, Meteor prints a summary table with each recipe's status, source name, duration in milliseconds, and the number of records collected.
+
+  </Accordion>
+
+  <Accordion title="lint" icon="circle-check">
+
+    ## lint
+
+    Validate one or more recipe files without running them.
+
+    ```
+    meteor lint [path]
+    ```
+
+    Alias: `l`
+
+    Linting checks that every extractor, processor, and sink named in a recipe exists in the registry and that each plugin's configuration is valid. Useful in CI pipelines to catch problems before execution.
+
+    If no path is provided, the current directory is used.
+
+    **Examples**
+
+    ```bash
+    # lint a single recipe file
+    meteor lint recipe.yaml
+
+    # lint every recipe in a directory
+    meteor lint _recipes/
+
+    # lint all recipes in the current directory
+    meteor lint .
+    ```
+
+    The command exits with a non-zero status when any recipe fails validation and prints a table showing the number of errors per recipe.
+
+    <Tip>Run `meteor lint` in CI before `meteor run` to catch configuration mistakes early.</Tip>
+
+  </Accordion>
+
+  <Accordion title="new" icon="file-plus">
+
+    ## new
+
+    Bootstrap new recipe files interactively or from flags.
+
+    ```
+    meteor new recipe <name> [flags]
+    ```
+
+    Alias for `new recipe`: `r`
+
+    The recipe is printed to standard output. Redirect it to a file to save it. When a flag is omitted, Meteor prompts you to select a value interactively.
+
+    **Flags**
+
+    <ParamField path="--extractor" type="string" required>
+      The extractor plugin to use as the recipe's source. Short form: `-e`. If omitted, an interactive prompt lists available extractors.
+    </ParamField>
+
+    <ParamField path="--scope" type="string" required>
+      The URN namespace used to scope the extracted assets. Short form: `-n`.
+    </ParamField>
+
+    <ParamField path="--sinks" type="string">
+      Comma-separated list of sink plugin names. Short form: `-s`. If omitted, an interactive prompt lists available sinks.
+    </ParamField>
+
+    <ParamField path="--processors" type="string">
+      Comma-separated list of processor plugin names. Short form: `-p`. If omitted, an interactive prompt lists available processors.
+    </ParamField>
+
+    **Examples**
+
+    ```bash
+    # generate a recipe with a BigQuery extractor and console sink
+    meteor new recipe sample -e bigquery -s console -n my-org
+
+    # generate a recipe with multiple sinks
+    meteor new recipe sample -e bigquery -s compass,kafka -p enrich -n my-org
+
+    # save the generated recipe to a file
+    meteor new recipe sample -e bigquery -s compass -n my-org > recipe.yaml
+
+    # interactive mode — prompts for extractor, sinks, and processors
+    meteor new recipe sample -n my-org
+    ```
+
+  </Accordion>
+
+  <Accordion title="gen" icon="wand-magic-sparkles">
+
+    ## gen
+
+    Generate multiple recipe files from a template and a data file.
+
+    ```
+    meteor gen <template-path> [flags]
+    ```
+
+    Use `gen` when you need to produce many similar recipes that differ only in variable values. The template is a YAML file with Go template syntax. The data file is a YAML array where each item provides the variable values for one generated recipe.
+
+    Generated recipes are written to the output directory specified by `--output`.
+
+    **Flags**
+
+    <ParamField path="--output" type="string">
+      Directory where generated recipe files are written. Short form: `-o`.
+    </ParamField>
+
+    <ParamField path="--data" type="string">
+      Path to a YAML file containing the template data array. Short form: `-d`.
+    </ParamField>
+
+    **Examples**
+
+    ```bash
+    # generate recipes from a template and data file
+    meteor gen my-template.yaml -o ./output-dir -d ./data.yaml
+    ```
+
+    **Template data format**
+
+    The data file must be a YAML array. Each element is passed to the template as a separate context, producing one recipe file per item.
+
+    ```yaml
+    - name: production-postgres
+      host: prod-db.example.com
+      database: analytics
+
+    - name: staging-postgres
+      host: staging-db.example.com
+      database: analytics_staging
+    ```
+
+  </Accordion>
+
+  <Accordion title="list" icon="list">
+
+    ## list
+
+    List all plugins registered in the Meteor binary.
+
+    ```
+    meteor list <subcommand>
+    ```
+
+    ### Subcommands
+
+    | Subcommand | Alias | Description |
+    |---|---|---|
+    | `extractors` | `e` | List all available extractor plugins |
+    | `sinks` | `s` | List all available sink plugins |
+    | `processors` | `p` | List all available processor plugins |
+
+    Each subcommand prints a table with the plugin name, description, and associated tags.
+
+    **Examples**
+
+    ```bash
+    # list all extractors
+    meteor list extractors
+
+    # list extractors using the short alias
+    meteor list e
+
+    # list all sinks
+    meteor list sinks
+
+    # list all sinks using the short alias
+    meteor list s
+
+    # list all processors
+    meteor list processors
+
+    # list processors using the short alias
+    meteor list p
+    ```
+
+  </Accordion>
+
+  <Accordion title="info" icon="circle-info">
+
+    ## info
+
+    Display detailed information about a specific plugin.
+
+    ```
+    meteor info <subcommand> [name]
+    ```
+
+    ### Subcommands
+
+    | Subcommand | Description |
+    |---|---|
+    | `extractor <name>` | Show information about an extractor |
+    | `sink <name>` | Show information about a sink |
+    | `processor <name>` | Show information about a processor |
+
+    The output includes a description, sample configuration, and the schema of the data produced or consumed by the plugin.
+
+    When `<name>` is omitted, an interactive prompt lets you select the plugin from a list.
+
+    **Examples**
+
+    ```bash
+    # display information about the postgres extractor
+    meteor info extractor postgres
+
+    # display information about the bigquery extractor
+    meteor info extractor bigquery
+
+    # display information about the console sink
+    meteor info sink console
+
+    # display information about the compass sink
+    meteor info sink compass
+
+    # display information about the enrich processor
+    meteor info processor enrich
+
+    # interactive mode — prompts for plugin name
+    meteor info sink
+    ```
+
+    <Tip>Use `meteor list sinks` to see all available sink names before running `meteor info sink`.</Tip>
+
+  </Accordion>
+
+  <Accordion title="version" icon="tag">
+
+    ## version
+
+    Print the Meteor binary version.
+
+    ```
+    meteor version
+    ```
+
+    Alias: `v`
+
+    Prints the version string and, when a newer release is available, a notification with the upgrade command.
+
+    **Examples**
+
+    ```bash
+    meteor version
+    meteor v
+    ```
+
+  </Accordion>
+
+</AccordionGroup>

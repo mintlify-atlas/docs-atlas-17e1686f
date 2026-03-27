@@ -1,0 +1,402 @@
+---
+title: Generic & Special Extractors
+description: Reference for generic and domain-specific extractors supported by Meteor, including HTTP, Elasticsearch, application_yaml, Optimus, CaraML Store, and Merlin.
+---
+
+Generic and special extractors either support arbitrary asset types through scripting, or target specific platforms such as Optimus, CaraML Store, and Merlin. This page also covers the Elasticsearch extractor.
+
+<AccordionGroup>
+
+<Accordion title="elastic" icon="magnifying-glass">
+
+Extracts index metadata and column (field mapping) schema from an Elasticsearch cluster.
+
+**Prerequisites**
+
+- Network access to the Elasticsearch HTTP API endpoint.
+- A user with at least `monitor` cluster privilege to list indices.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: elastic
+  scope: production-search
+  config:
+    host: http://localhost:9200
+    user: admin
+    password: "1234"
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Elasticsearch server URL. Example: `http://localhost:9200`
+</ParamField>
+
+<ParamField body="user" type="string">
+  Username for Elasticsearch authentication.
+</ParamField>
+
+<ParamField body="password" type="string">
+  Password for Elasticsearch authentication.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `elasticsearch.index1` |
+| `resource.name` | `index1` |
+| `resource.service` | `elastic` |
+| `profile.total_rows` | `1024` |
+| `schema.columns[].name` | `SomeStr` |
+| `schema.columns[].data_type` | `text` |
+
+</Accordion>
+
+<Accordion title="http" icon="globe">
+
+A flexible extractor that calls any HTTP endpoint and uses a [Tengo](https://github.com/d5/tengo) script to transform the response into one or more Meteor assets. Supports any asset type: `bucket`, `dashboard`, `experiment`, `feature_table`, `group`, `job`, `metric`, `model`, `application`, `table`, `topic`, or `user`.
+
+**Prerequisites**
+
+- Network access to the target HTTP endpoint from the host running Meteor.
+- A Tengo script that maps the API response to Meteor asset structures.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: http
+  scope: production
+  config:
+    request:
+      url: "https://api.example.com/v1/users"
+      method: GET
+      headers:
+        Authorization: "Bearer my-api-token"
+      content_type: application/json
+      accept: application/json
+      timeout: 5s
+    success_codes: [200]
+    concurrency: 3
+    script:
+      engine: tengo
+      source: |
+        for u in response.body.data {
+          asset := new_asset("user")
+          asset.urn = format("urn:my-svc:production:user:%s", u.id)
+          asset.name = u.full_name
+          asset.service = "my-svc"
+          asset.data.email = u.email
+          asset.data.full_name = u.full_name
+          asset.data.status = u.active ? "active" : "suspended"
+          emit(asset)
+        }
+```
+
+**Config fields**
+
+<ParamField body="request" type="object" required>
+  Configuration for the outbound HTTP request. See the sub-fields below.
+</ParamField>
+
+<ParamField body="request.route_pattern" type="string" required>
+  A route pattern used as the `http.route` metric tag (e.g. `/api/v1/endpoint`). Does not affect the actual URL called.
+</ParamField>
+
+<ParamField body="request.url" type="string" required>
+  Full URL of the HTTP endpoint to call.
+</ParamField>
+
+<ParamField body="request.method" type="string" default="GET">
+  HTTP verb to use (`GET`, `POST`, etc.).
+</ParamField>
+
+<ParamField body="request.headers" type="object">
+  Key-value map of HTTP headers to include in the request.
+</ParamField>
+
+<ParamField body="request.content_type" type="string" required>
+  MIME type for encoding the request body. Only `application/json` is currently supported.
+</ParamField>
+
+<ParamField body="request.accept" type="string" required>
+  `Accept` header value. Also controls response body decoding. Only `application/json` is currently supported.
+</ParamField>
+
+<ParamField body="request.query_params" type="object[]">
+  List of query parameters to append to the URL. Each item must have `key` and `value` fields. Takes precedence over parameters already present in `request.url`.
+</ParamField>
+
+<ParamField body="request.body" type="object">
+  Request body to send. Only used with methods that support a body (e.g. `POST`, `PUT`).
+</ParamField>
+
+<ParamField body="request.timeout" type="string" default="5s">
+  Timeout for the HTTP request in Go duration format (e.g. `10s`, `1m`).
+</ParamField>
+
+<ParamField body="success_codes" type="number[]" default="[200]">
+  HTTP status codes that are treated as successful responses. The script is only executed when the response code matches one of these values.
+</ParamField>
+
+<ParamField body="concurrency" type="number" default="5">
+  Number of concurrent child requests to execute when `execute_request()` is called inside the script.
+</ParamField>
+
+<ParamField body="script.engine" type="string" required>
+  Script engine to use. Only `tengo` is supported.
+</ParamField>
+
+<ParamField body="script.source" type="string" required>
+  Tengo script source code. The script has access to the globals `response`, `new_asset()`, `emit()`, `execute_request()`, `exit()`, and `recipe_scope`.
+</ParamField>
+
+<ParamField body="script.max_allocs" type="number" default="5000">
+  Maximum number of object allocations permitted during script execution.
+</ParamField>
+
+<ParamField body="script.max_const_objects" type="number" default="500">
+  Maximum number of constant objects in the compiled script.
+</ParamField>
+
+**Script globals**
+
+| Global | Type | Description |
+| :----- | :--- | :---------- |
+| `response` | object | HTTP response with `status_code`, `header` (lowercase keys), and `body`. |
+| `recipe_scope` | string | Value of the `scope` field from the recipe source block. |
+| `new_asset(type)` | function | Creates a new asset of the given type. |
+| `emit(asset)` | function | Emits a completed asset to the pipeline. |
+| `execute_request(...reqs)` | function | Executes one or more additional HTTP requests concurrently. |
+| `exit()` | function | Terminates script execution immediately. |
+
+<Warning>Do not overwrite the `asset.data` object directly. Set individual fields on it instead, or proto serialization will fail.</Warning>
+
+</Accordion>
+
+<Accordion title="application_yaml" icon="file">
+
+Extracts `Application` asset metadata from a YAML manifest file. Designed for use in CI/CD pipelines to register service ownership and data lineage alongside deployments.
+
+**Prerequisites**
+
+- An `application.yaml` file describing the application. See the format below.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: application_yaml
+  scope: applications-production
+  config:
+    file: "./meteor.app.yaml"
+    env_prefix: CI
+```
+
+**Config fields**
+
+<ParamField body="file" type="string" required>
+  Path to the `application.yaml` file. Relative paths are resolved from the working directory where Meteor is run.
+</ParamField>
+
+<ParamField body="env_prefix" type="string" default="CI">
+  Prefix for environment variables that are injected as template variables into the YAML file. For example, with `env_prefix: CI`, the env var `CI_PROJECT_NAME` becomes available as `PROJECT_NAME` in the YAML.
+</ParamField>
+
+**`application.yaml` format**
+
+```yaml
+name: "order-manager"           # required
+id: "0adf3214-676c-4a74-ab37-9d4a4b8ade0e"  # required
+description: "Order management service"
+url: "https://github.com/mycompany/order-manager"
+version: "d6ec883"
+team:
+  id: "9ebcc2f8-5894-47c6-83a9-160b7eaa3f6b"
+  name: "Search"
+  email: "search@mycompany.com"
+inputs:
+  - urn:bigquery:bq-raw-internal:table:bq-raw-internal:dagstream.production_feast09_s2id13_30min_demand
+outputs:
+  - urn:kafka:1-my-kafka.com:topic:staging_feast09_mixed_granularity_demand_forecast
+create_time: "2022-08-08T03:17:54Z"
+update_time: "2022-08-08T03:57:54Z"
+labels:
+  team: search
+```
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `urn:application_yaml:production:application:order-manager` |
+| `resource.name` | `order-manager` |
+| `resource.service` | `application_yaml` |
+| `resource.type` | `application` |
+| `resource.url` | `https://github.com/mycompany/order-manager` |
+| `version` | `d6ec883` |
+| `ownership.owners[0].name` | `Search` |
+| `ownership.owners[0].email` | `search@mycompany.com` |
+| `lineage.upstreams[].urn` | `urn:bigquery:bq-raw-internal:table:...` |
+| `lineage.downstreams[].urn` | `urn:kafka:1-my-kafka.com:topic:...` |
+
+</Accordion>
+
+<Accordion title="optimus" icon="briefcase">
+
+Extracts job (pipeline) metadata including ownership and upstream/downstream lineage from an [Optimus](https://github.com/raystack/optimus) server via gRPC.
+
+**Prerequisites**
+
+- Network access to the Optimus gRPC endpoint from the host running Meteor.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: optimus
+  config:
+    host: optimus.example.com:80
+```
+
+**Config fields**
+
+<ParamField body="host" type="string" required>
+  Optimus gRPC server address in `host:port` format.
+</ParamField>
+
+<ParamField body="max_size_in_mb" type="number" default="45">
+  Maximum message size in megabytes that the gRPC client will accept. Increase this if you receive gRPC "message too large" errors on clusters with many jobs.
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `optimus::https://optimus-host.com/project.namespace.job` |
+| `resource.name` | `job-name` |
+| `resource.service` | `optimus` |
+| `resource.description` | `Sample job description` |
+| `ownership.owners[0].urn` | `john_doe@example.com` |
+| `lineage.upstreams[].urn` | `bigquery::project/dataset/table` |
+| `lineage.downstreams[0].urn` | `bigquery::project/dataset/table` |
+
+</Accordion>
+
+<Accordion title="caramlstore" icon="layers">
+
+Extracts ML feature table metadata from [CaraML Store](https://github.com/caraml-dev/caraml-store) via the `CoreService` gRPC API. Emits `FeatureTable` assets with entity definitions, feature lists, and timestamps.
+
+**Prerequisites**
+
+- Network access to the CaraML Store gRPC endpoint from the host running Meteor.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: caramlstore
+  scope: caramlstore-staging
+  config:
+    url: staging.caraml-store.example.com:80
+    max_size_in_mb: 10
+    request_timeout: 30s
+```
+
+**Config fields**
+
+<ParamField body="url" type="string" required>
+  CaraML Store gRPC server address in `host:port` format.
+</ParamField>
+
+<ParamField body="max_size_in_mb" type="number" default="45">
+  Maximum message size in megabytes that the gRPC client will accept.
+</ParamField>
+
+<ParamField body="request_timeout" type="string" default="10s">
+  Timeout for each gRPC request in Go duration format (e.g. `30s`, `2m`).
+</ParamField>
+
+**Output**
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `urn:caramlstore:caramlstore-staging:feature_table:my_project.merchant_uuid_t2_discovery` |
+| `resource.name` | `merchant_uuid_t2_discovery` |
+| `resource.service` | `caramlstore` |
+| `resource.type` | `feature_table` |
+| `namespace` | `my_project` |
+| `entities[].name` | `service_type` |
+| `features[].name` | `avg_gmv_merchant_1d` |
+| `features[].data_type` | `INT64` |
+
+</Accordion>
+
+<Accordion title="merlin" icon="cpu">
+
+Extracts ML model metadata from a [Merlin](https://github.com/gojek/merlin) model serving platform via its REST API. Emits `Model` assets with version details, endpoint URLs, deployment configurations, and upstream CaraML Store lineage.
+
+**Prerequisites**
+
+- Network access to the Merlin API from the host running Meteor.
+- A Google Cloud service account with access to Merlin's GCP project, or use Application Default Credentials.
+
+**Sample recipe**
+
+```yaml
+source:
+  name: merlin
+  scope: staging
+  config:
+    url: https://my-company.com/api/merlin/
+    request_timeout: 10s
+    worker_count: 5
+    service_account_base64: |
+      ____base64_encoded_service_account_credentials____
+```
+
+**Config fields**
+
+<ParamField body="url" type="string" required>
+  Merlin API base URL (e.g. `https://my-company.com/api/merlin/`).
+</ParamField>
+
+<ParamField body="service_account_base64" type="string">
+  Service account credentials encoded as a base64 string. If omitted, falls back to Application Default Credentials.
+</ParamField>
+
+<ParamField body="request_timeout" type="string" default="10s">
+  Timeout for HTTP requests to the Merlin API in Go duration format.
+</ParamField>
+
+<ParamField body="worker_count" type="number" default="5">
+  Number of parallel workers used to extract projects from Merlin. Increase for large deployments.
+</ParamField>
+
+**Output**
+
+One `Model` asset is emitted per Merlin model. All active model versions (those with at least one endpoint) are embedded within the model asset.
+
+| Field | Sample value |
+| :---- | :----------- |
+| `resource.urn` | `urn:merlin:staging:model:food.restaurant-image` |
+| `resource.name` | `tensorflow-sample` |
+| `resource.service` | `merlin` |
+| `resource.type` | `model` |
+| `resource.url` | `tensorflow-sample.integration-test.models.mycompany.com` |
+| `namespace` | `integration-test` |
+| `flavor` | `pyfunc` |
+| `versions[].version` | `11` |
+| `versions[].status` | `running` |
+| `versions[].attributes.endpoint_url` | `tensorflow-sample.integration-test.models.mycompany.com` |
+| `ownership.owners[].email` | `giga.chad@example.com` |
+| `lineage.upstreams[].urn` | `urn:caramlstore:staging:feature_table:my_project.ft_name` |
+
+<Note>Upstream lineage is only populated for models that use a `standard` transformer with feature table specs defined in environment variables pointing to CaraML Store.</Note>
+
+</Accordion>
+
+</AccordionGroup>
